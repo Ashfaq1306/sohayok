@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import tomllib
 from dataclasses import dataclass, field, fields, is_dataclass
@@ -36,7 +37,12 @@ class BrainConfig:
     decider_model: str = "auto"
     # Laya takes ~160 ms on the CPU, which keeps 1.3 GB of GPU memory free for other work.
     decider_device: str = "cpu"
+    # Answer model: "ollama" (this PC, free) or an API: "openai", "gemini", "glm", "openrouter",
+    # "anthropic", "custom" (any OpenAI-compatible URL). Keys are saved in Windows Credential
+    # Manager from Settings, or read from OPENAI_API_KEY, GEMINI_API_KEY, ... .
+    provider: str = "ollama"
     lite_model: str = "qwen3.5:2b"
+    base_url: str = ""  # only for provider "custom"
     # Below this decision confidence, or for multi-step requests, the agent model takes over.
     decider_min_confidence: float = 0.7  # below it Laya is right only ~41% of the time
     ollama_url: str = "http://127.0.0.1:11434"
@@ -155,7 +161,36 @@ def load(path: Path | None = None) -> Config:
     if path.exists():
         with path.open("rb") as handle:
             _merge(config, tomllib.load(handle))
+    settings = path.with_name("settings.json")  # written by the Settings panel
+    if settings.exists():
+        try:
+            _merge(config, json.loads(settings.read_text("utf-8")))
+        except (ValueError, OSError):
+            pass
     return config
+
+
+SETTABLE = {
+    "brain": {"provider", "lite_model", "base_url"},
+    "voice": {"enabled"},
+    "assistant": {"confirm_risky_actions"},
+    "activation": {"wake_word"},
+}
+
+
+def save_settings(updates: dict[str, dict[str, Any]], folder: Path | None = None) -> dict:
+    """Merge Settings-panel changes into settings.json (only the keys above are allowed)."""
+    path = (folder or app_dir()) / "settings.json"
+    current_settings = json.loads(path.read_text("utf-8")) if path.exists() else {}
+    for section, values in updates.items():
+        allowed = SETTABLE.get(section, set())
+        bad = set(values) - allowed
+        if bad:
+            raise ValueError(f"cannot change {section}.{', '.join(sorted(bad))} here")
+        current_settings.setdefault(section, {}).update(values)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(current_settings, indent=2, ensure_ascii=False), "utf-8")
+    return current_settings
 
 
 _current: Config | None = None

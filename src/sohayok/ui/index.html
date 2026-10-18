@@ -122,6 +122,31 @@
   .chip { flex: none; font: 12px "Segoe UI", "Nirmala UI", sans-serif; padding: 5px 11px; border-radius: 999px;
     border: 1px solid var(--line); background: var(--glass); color: var(--muted); cursor: pointer; transition: color .15s, border-color .15s; }
   .chip:hover { color: var(--text); border-color: color-mix(in srgb, var(--accent) 50%, transparent); }
+  .settings { position: fixed; inset: 0; z-index: 8; background: color-mix(in srgb, var(--bg) 90%, transparent);
+    overflow-y: auto; padding: 16px; opacity: 0; pointer-events: none;
+    transform: translateY(12px); transition: opacity .2s ease, transform .2s ease; }
+  .settings.show { opacity: 1; pointer-events: auto; transform: none; }
+  .settings .inner { max-width: 520px; margin: 0 auto; display: grid; gap: 14px; }
+  .settings h2 { margin: 0; font-size: 13px; letter-spacing: .2em; text-transform: uppercase; color: var(--accent); }
+  .settings .card { background: var(--glass2); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px;
+    display: grid; gap: 8px; }
+  .settings .card h3 { margin: 0; font-size: 12px; color: var(--muted); font-weight: 600; letter-spacing: .06em;
+    text-transform: uppercase; }
+  .settings label { display: grid; gap: 4px; font-size: 12.5px; color: var(--muted); }
+  .settings select, .settings input[type=text], .settings input[type=password] {
+    font: 13.5px "Segoe UI", "Nirmala UI", sans-serif; color: var(--text); background: var(--bg);
+    border: 1px solid var(--line); border-radius: 9px; padding: 8px 10px; outline: none; }
+  .settings select:focus, .settings input:focus { border-color: color-mix(in srgb, var(--accent) 60%, transparent); }
+  .settings .row2 { display: flex; gap: 8px; align-items: end; }
+  .settings .row2 > label { flex: 1; }
+  .settings .check { display: flex; gap: 8px; align-items: center; color: var(--text); font-size: 13.5px; }
+  .settings .hint { font-size: 11.5px; color: var(--dim); margin: 0; }
+  .settings .actions { display: flex; gap: 8px; align-items: center; }
+  .btn { padding: 8px 14px; border-radius: 10px; border: 1px solid var(--line); background: var(--glass);
+    color: var(--text); font: 600 13px "Segoe UI", "Nirmala UI", sans-serif; cursor: pointer; }
+  .btn.primary { background: linear-gradient(135deg, #1fb6d0, #6a5cff); border: none; color: white; }
+  .settings .status { font-size: 12px; color: var(--muted); min-height: 16px; flex: 1; }
+  .settings .status.err { color: var(--red); }
   kbd { font: 10.5px ui-monospace, Consolas, monospace; border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; color: var(--muted); }
   @media (prefers-reduced-motion: reduce) { body::before { animation: none; } .msg, .acts { animation: none; } }
 </style>
@@ -132,6 +157,7 @@
   <div class="hud">
     <span class="chip-state" id="state">প্রস্তুত · ready</span>
     <button class="icon-btn" id="theme" title="Light / dark" aria-label="Toggle theme">◐</button>
+    <button class="icon-btn" id="open-settings" title="Settings" aria-label="Settings">⚙</button>
     <button class="icon-btn desktop-only" id="pin" title="Keep open" aria-label="Keep open">📌</button>
     <button class="icon-btn desktop-only" id="close" title="Hide (Sohayok keeps listening)" aria-label="Hide">✕</button>
   </div>
@@ -152,6 +178,41 @@
     <button class="no" id="no">না · No</button>
   </div>
 </div>
+<section class="settings" id="settings" aria-label="Settings">
+  <div class="inner">
+    <div class="row2"><h2 style="flex:1">Settings · সেটিংস</h2>
+      <button class="icon-btn" id="close-settings" aria-label="Close settings">✕</button></div>
+    <div class="card">
+      <h3>Decision model</h3>
+      <p class="hint" id="decider-info">Laya-Bangla picks the action on this PC (about 0.2 s).</p>
+    </div>
+    <div class="card">
+      <h3>Answer model</h3>
+      <label>Provider <select id="provider"></select></label>
+      <div class="row2">
+        <label>Model <input type="text" id="model" list="model-list" autocomplete="off"></label>
+        <button class="btn" id="load-models">Load models</button>
+      </div>
+      <datalist id="model-list"></datalist>
+      <label id="base-url-row">Base URL (OpenAI-compatible)
+        <input type="text" id="base-url" placeholder="https://…/v1"></label>
+      <label id="key-row">API key <input type="password" id="api-key" autocomplete="off"></label>
+      <p class="hint">Keys are stored in Windows Credential Manager, never in a file, and are never shown
+        again. “This PC” is free and private; an API sends your request text to that provider.</p>
+    </div>
+    <div class="card">
+      <h3>Behaviour</h3>
+      <label class="check"><input type="checkbox" id="speak"> Speak replies aloud</label>
+      <label class="check"><input type="checkbox" id="confirm-risky"> Ask before risky actions
+        (shut down, delete, run commands)</label>
+      <label class="check"><input type="checkbox" id="wake"> Wake word “Tammy”
+        (applies after restarting Sohayok)</label>
+    </div>
+    <div class="actions"><span class="status" id="settings-status"></span>
+      <button class="btn" id="cancel-settings">Cancel</button>
+      <button class="btn primary" id="save-settings">Save</button></div>
+  </div>
+</section>
 <footer>
   <div class="bar">
     <button class="mic" id="mic" title="Talk (Ctrl+Alt+Space)" aria-label="Talk">
@@ -307,7 +368,8 @@ function scheduleHide() {
   if (!desktop || pinned) return;
   hideTimer = setTimeout(() => {
     const typing = document.activeElement === $("text") && $("text").value;
-    if (core.state === "idle" && !hovering && !typing && !$("confirm").classList.contains("show")) {
+    if (core.state === "idle" && !hovering && !typing && !$("confirm").classList.contains("show")
+        && !$("settings").classList.contains("show")) {
       window.pywebview.api.hide();
     } else scheduleHide();
   }, 12000);
@@ -382,6 +444,66 @@ $("theme").onclick = () => {
   try { localStorage.setItem("sohayok-theme", light ? "light" : "dark"); } catch {}
 };
 try { const saved = localStorage.getItem("sohayok-theme"); if (saved) document.documentElement.dataset.theme = saved; } catch {}
+
+// ---------- settings ----------
+let settingsData = null;
+async function openSettings() {
+  settingsData = await (await fetch("/api/settings")).json();
+  const select = $("provider"); select.innerHTML = "";
+  for (const [name, p] of Object.entries(settingsData.providers)) {
+    const o = document.createElement("option"); o.value = name; o.textContent = p.label; select.append(o);
+  }
+  select.value = settingsData.provider;
+  $("model").value = settingsData.model;
+  $("base-url").value = settingsData.base_url || "";
+  $("speak").checked = settingsData.speak_replies;
+  $("confirm-risky").checked = settingsData.confirm_risky_actions;
+  $("wake").checked = settingsData.wake_word;
+  $("decider-info").textContent = settingsData.decider + " picks the action on this PC (about 0.2 s).";
+  $("settings-status").textContent = ""; $("settings-status").classList.remove("err");
+  providerChanged(false);
+  $("settings").classList.add("show"); clearTimeout(hideTimer);
+}
+function providerChanged(resetModel = true) {
+  const p = settingsData.providers[$("provider").value];
+  if (resetModel) $("model").value = p.default_model;
+  $("key-row").style.display = p.needs_key ? "" : "none";
+  $("base-url-row").style.display = $("provider").value === "custom" ? "" : "none";
+  $("api-key").value = "";
+  $("api-key").placeholder = p.key_saved ? "saved ✓ (leave empty to keep it)" : "paste your API key";
+  $("model-list").innerHTML = "";
+}
+async function loadModels() {
+  const status = $("settings-status");
+  status.textContent = "loading…"; status.classList.remove("err");
+  const params = new URLSearchParams({ provider: $("provider").value, base_url: $("base-url").value });
+  const data = await (await fetch("/api/models?" + params)).json();
+  $("model-list").innerHTML = "";
+  for (const m of data.models) { const o = document.createElement("option"); o.value = m; $("model-list").append(o); }
+  status.textContent = data.error ? "could not list models: " + data.error
+                                  : data.models.length + " models: type or pick one";
+  status.classList.toggle("err", !!data.error);
+}
+async function saveSettings() {
+  const status = $("settings-status");
+  status.textContent = "saving…"; status.classList.remove("err");
+  const body = { provider: $("provider").value, model: $("model").value, base_url: $("base-url").value,
+    speak_replies: $("speak").checked, confirm_risky_actions: $("confirm-risky").checked,
+    wake_word: $("wake").checked };
+  if ($("api-key").value) body.api_key = $("api-key").value;
+  const result = await post("/api/settings", body);
+  $("api-key").value = "";
+  if (!result.ok) { status.textContent = result.error || "could not save"; status.classList.add("err"); return; }
+  if (result.provider_note) { status.textContent = result.provider_note; status.classList.add("err"); return; }
+  status.textContent = "saved ✓" + (result.restart_needed ? " (restart Sohayok for the wake word change)" : "");
+  if (result.model) { info.model = result.model; showInfo(); }
+  setTimeout(() => $("settings").classList.remove("show"), 900);
+}
+$("open-settings").onclick = openSettings;
+$("close-settings").onclick = $("cancel-settings").onclick = () => $("settings").classList.remove("show");
+$("provider").onchange = () => providerChanged(true);
+$("load-models").onclick = loadModels;
+$("save-settings").onclick = saveSettings;
 
 const info = {};
 function showInfo() {

@@ -13,6 +13,7 @@ dependencies = [
     "fastapi>=0.143.3",
     "faster-whisper>=1.2.1",
     "httpx>=0.28.1",
+    "keyring>=25.7.0",
     "laya==0.4.11",
     "mss>=10.2.0",
     "numpy>=2.5.4",

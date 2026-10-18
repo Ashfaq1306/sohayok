@@ -82,29 +82,7 @@ def build_brain(config: Config) -> tuple[Any, dict[str, str]]:
     from sohayok.brain.ollama import OllamaBrain
 
     if brain_config.backend == "lite":
-        from sohayok.brain.lite import LiteBrain
-        from sohayok.decide import LayaDecider, resolve_decider
-
-        model, revision = resolve_decider(brain_config.decider_model)
-        agent = OllamaBrain(
-            brain_config.ollama_model,
-            brain_config.ollama_url,
-            config.assistant.name,
-            config.assistant.home_city,
-            brain_config.max_steps,
-            brain_config.temperature,
-            brain_config.ollama_keep_alive,
-        )
-        brain = LiteBrain(
-            LayaDecider(model, revision, device=brain_config.decider_device),
-            brain_config.lite_model,
-            brain_config.ollama_url,
-            fallback=agent,
-            min_confidence=brain_config.decider_min_confidence,
-            keep_alive=brain_config.ollama_keep_alive,
-        )
-        threading.Thread(target=_warm, args=(brain,), name="warm-llm", daemon=True).start()
-        return brain, {"backend": "Laya-Bangla", "model": brain_config.lite_model}
+        return build_lite(config)
     brain = OllamaBrain(
         brain_config.ollama_model,
         brain_config.ollama_url,
@@ -116,6 +94,66 @@ def build_brain(config: Config) -> tuple[Any, dict[str, str]]:
     )
     threading.Thread(target=_warm, args=(brain,), name="warm-llm", daemon=True).start()
     return brain, {"backend": "Ollama (local)", "model": brain_config.ollama_model}
+
+
+def build_lite(config: Config, decider: Any = None) -> tuple[Any, dict[str, str]]:
+    """Laya-Bangla decides; the answer model comes from the provider chosen in Settings.
+
+    Pass the running `decider` to switch providers without reloading Laya.
+    """
+    from sohayok.brain.agent import ToolAgent
+    from sohayok.brain.lite import LiteBrain
+    from sohayok.brain.ollama import OllamaBrain
+    from sohayok.brain.providers import PROVIDERS, get_key, make_chat_model
+    from sohayok.decide import LayaDecider, resolve_decider
+
+    bc = config.brain
+    if decider is None:
+        model, revision = resolve_decider(bc.decider_model)
+        decider = LayaDecider(model, revision, device=bc.decider_device)
+    provider, note = bc.provider, ""
+    try:
+        chat = make_chat_model(
+            provider, bc.lite_model, bc.base_url, bc.ollama_keep_alive, bc.ollama_url
+        )
+    except ValueError as exc:  # e.g. no API key yet: keep working on this PC
+        log.warning("%s; using the local model", exc)
+        provider, note = "ollama", str(exc)
+        chat = make_chat_model("ollama", "", "", bc.ollama_keep_alive, bc.ollama_url)
+    spec = PROVIDERS[provider]
+    if spec.kind == "ollama":
+        agent = OllamaBrain(
+            chat.name,
+            bc.ollama_url,
+            config.assistant.name,
+            config.assistant.home_city,
+            bc.max_steps,
+            bc.temperature,
+            bc.ollama_keep_alive,
+        )
+    elif spec.kind == "anthropic":
+        import anthropic
+
+        from sohayok.brain.claude import ClaudeBrain
+
+        agent = ClaudeBrain(
+            chat.name,
+            config.assistant.name,
+            config.assistant.home_city,
+            max(bc.max_steps, 25),
+            bc.computer_use,
+            client=anthropic.Anthropic(api_key=get_key("anthropic")),
+        )
+    else:
+        agent = ToolAgent(chat, config.assistant.name, config.assistant.home_city, bc.max_steps)
+    brain = LiteBrain(
+        decider, fallback=agent, min_confidence=bc.decider_min_confidence, chat_model=chat
+    )
+    threading.Thread(target=_warm, args=(brain,), name="warm-llm", daemon=True).start()
+    info = {"backend": "Laya-Bangla", "model": chat.name, "provider": provider}
+    if note:
+        info["provider_note"] = note
+    return brain, info
 
 
 def _warm(brain: Any) -> None:
@@ -290,8 +328,25 @@ def run(config: Config, show_window: bool = True, greet: bool = True) -> None:
         ).start()
 
     shell.on_listen = activate
+
+    def reload_brain() -> dict[str, str]:
+        """Settings changed the answer model: rebuild it, keeping the loaded Laya decider."""
+        if config.brain.backend != "lite":
+            return {}
+        brain, new_info = build_lite(config, getattr(assistant.brain, "decider", None))
+        assistant.brain = brain
+        info.pop("provider_note", None)
+        info.update(new_info)
+        assistant.emit("ready", **{k: v for k, v in info.items() if isinstance(v, str)})
+        return new_info
+
     app = create_app(
-        assistant, info, controls={"show": shell.show if show_window else lambda: None}
+        assistant,
+        info,
+        controls={
+            "show": shell.show if show_window else lambda: None,
+            "reload_brain": reload_brain,
+        },
     )
     server = uvicorn.Server(uvicorn.Config(app, host=host, port=port, log_level="warning"))
     shell.on_quit = lambda: setattr(server, "should_exit", True)

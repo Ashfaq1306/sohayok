@@ -23,6 +23,16 @@ class ConfirmIn(BaseModel):
     answer: bool
 
 
+class SettingsIn(BaseModel):
+    provider: str | None = None
+    model: str | None = None
+    base_url: str | None = None
+    api_key: str | None = None  # stored in Windows Credential Manager; never sent back
+    speak_replies: bool | None = None
+    confirm_risky_actions: bool | None = None
+    wake_word: bool | None = None
+
+
 class EventHub:
     """Fans assistant events (from any thread) out to every connected window."""
 
@@ -96,6 +106,80 @@ def create_app(
         if "show" in controls:
             controls["show"]()
         return {"status": "shown" if "show" in controls else "no window"}
+
+    @app.get("/api/settings")
+    def get_settings() -> dict[str, Any]:
+        from sohayok.brain.providers import PROVIDERS, get_key
+
+        config = assistant.config
+        return {
+            "provider": config.brain.provider,
+            "model": config.brain.lite_model,
+            "base_url": config.brain.base_url,
+            "providers": {
+                name: {
+                    "label": p.label,
+                    "default_model": p.default_model,
+                    "needs_key": p.kind != "ollama",
+                    "key_saved": p.kind != "ollama" and bool(get_key(name)),
+                }
+                for name, p in PROVIDERS.items()
+            },
+            "speak_replies": config.voice.enabled,
+            "confirm_risky_actions": config.assistant.confirm_risky_actions,
+            "wake_word": config.activation.wake_word,
+            "decider": "Laya-Bangla (ashfaq1306/sohayok-laya-actions)",
+        }
+
+    @app.get("/api/models")
+    def models(provider: str, base_url: str = "") -> dict[str, Any]:
+        from sohayok.brain.providers import list_models
+
+        try:
+            return {"models": list_models(provider, base_url, assistant.config.brain.ollama_url)}
+        except Exception as exc:
+            return {"models": [], "error": str(exc)[:300]}
+
+    @app.post("/api/settings")
+    def set_settings(body: SettingsIn) -> dict[str, Any]:
+        from sohayok.brain.providers import PROVIDERS, set_key
+        from sohayok.config import save_settings
+
+        config = assistant.config
+        brain: dict[str, Any] = {}
+        if body.provider is not None:
+            if body.provider not in PROVIDERS:
+                return {"ok": False, "error": f"unknown provider {body.provider}"}
+            brain["provider"] = config.brain.provider = body.provider
+        if body.model is not None:
+            brain["lite_model"] = config.brain.lite_model = body.model.strip()
+        if body.base_url is not None:
+            brain["base_url"] = config.brain.base_url = body.base_url.strip()
+        if body.api_key:
+            set_key(body.provider or config.brain.provider, body.api_key.strip())
+        updates: dict[str, dict[str, Any]] = {"brain": brain} if brain else {}
+        if body.speak_replies is not None:
+            updates["voice"] = {"enabled": body.speak_replies}
+            config.voice.enabled = body.speak_replies
+            if assistant.speaker is not None:
+                assistant.speaker.enabled = body.speak_replies
+        if body.confirm_risky_actions is not None:
+            updates["assistant"] = {"confirm_risky_actions": body.confirm_risky_actions}
+            config.assistant.confirm_risky_actions = body.confirm_risky_actions
+            assistant.executor.confirm = body.confirm_risky_actions
+        if body.wake_word is not None:
+            updates["activation"] = {"wake_word": body.wake_word}
+            config.activation.wake_word = body.wake_word
+        save_settings(updates)
+        result: dict[str, Any] = {"ok": True}
+        if (brain or body.api_key) and "reload_brain" in controls:
+            try:
+                result.update(controls["reload_brain"]())
+            except Exception as exc:
+                result.update(ok=False, error=str(exc)[:300])
+        if body.wake_word is not None:
+            result["restart_needed"] = True
+        return result
 
     @app.post("/api/stop")
     def stop() -> dict[str, str]:

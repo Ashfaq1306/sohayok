@@ -92,40 +92,28 @@ class LiteBrain:
         url: str = "http://127.0.0.1:11434",
         fallback: Any = None,
         min_confidence: float = 0.7,
-        keep_alive: str = "30m",
+        keep_alive: str = "2m",
         client: httpx.Client | None = None,
+        chat_model: Any = None,
     ) -> None:
+        from sohayok.brain.providers import OllamaChat
+
         self.decider = decider
-        self.model = model
-        self.url = url.rstrip("/")
         self.fallback = fallback
         self.min_confidence = min_confidence
-        self.keep_alive = keep_alive
-        self.client = client or httpx.Client(timeout=httpx.Timeout(60, connect=5))
+        # Any provider (brain.providers.ChatModel); a local Ollama model by default.
+        self.chat_model = chat_model or OllamaChat(model, url, keep_alive, client)
+        self.model = self.chat_model.name
         self.last_decision: Decision | None = None
 
-    # ---- small model -----------------------------------------------------------------------
+    # ---- answer model ----------------------------------------------------------------------
     def _chat(
         self, messages: list[dict], tools: list[dict] | None = None, num_predict: int = 160
     ) -> dict:
-        body: dict[str, Any] = {
-            "model": self.model,
-            "messages": messages,
-            "stream": False,
-            "think": False,
-            "keep_alive": self.keep_alive,
-            "options": {"temperature": 0.2, "num_ctx": 4096, "num_predict": num_predict},
-        }
-        if tools:
-            body["tools"] = [{"type": "function", "function": t} for t in tools]
-        response = self.client.post(f"{self.url}/api/chat", json=body)
-        response.raise_for_status()
-        return response.json()["message"]
+        return self.chat_model.chat(messages, tools, num_predict)
 
     def warm_up(self) -> None:
-        self.client.post(
-            f"{self.url}/api/generate", json={"model": self.model, "keep_alive": self.keep_alive}
-        )
+        self.chat_model.warm_up()
 
     def _say(
         self,
