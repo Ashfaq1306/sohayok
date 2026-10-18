@@ -293,9 +293,21 @@ def cmd_setup(args: argparse.Namespace) -> None:
         print(f"ready: {prepare_bangla_model(target)}")
     ollama = shutil.which("ollama") or str(Path.home() / "AppData/Local/Programs/Ollama/ollama.exe")
     if Path(ollama).exists():
-        subprocess.run([ollama, "pull", config.brain.ollama_model], check=False)
+        for model in dict.fromkeys([config.brain.lite_model, config.brain.ollama_model]):
+            subprocess.run([ollama, "pull", model], check=False)
     else:
         print("Ollama is not installed: winget install Ollama.Ollama")
+    from sohayok.decide import resolve_decider
+
+    if args.train_decider:
+        from sohayok.training.prepare import train_decider
+
+        print(f"decision model ready: {train_decider(config_module.app_dir())}")
+    elif "sohayok" not in resolve_decider("auto")[0]:
+        print(
+            "Decisions use the published Laya-Bangla. For Sohayok's fine-tuned decider "
+            "(91.8% vs 63.4% right actions), run: sohayok setup --train-decider  (~1 h on a GPU)"
+        )
 
 
 def cmd_install(args: argparse.Namespace) -> None:
@@ -355,6 +367,11 @@ def main(argv: list[str] | None = None) -> None:
     sub.add_parser("doctor", help="check the setup").set_defaults(func=cmd_doctor)
     setup = sub.add_parser("setup", help="download and prepare the models")
     setup.add_argument("--force", action="store_true", help="rebuild the Bangla model")
+    setup.add_argument(
+        "--train-decider",
+        action="store_true",
+        help="fine-tune Laya-Bangla for desktop actions (about 1 hour on a GPU)",
+    )
     setup.set_defaults(func=cmd_setup)
     sub.add_parser("config", help="open the settings file").set_defaults(func=cmd_config)
     install = sub.add_parser("install", help="start with Windows; add Start menu/Desktop shortcuts")

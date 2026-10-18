@@ -97,7 +97,37 @@ Bangla script for Bangla requests and in English otherwise.
 | gemma4:e4b-it-qat | 40.6% | 34.7% | 81.7% | 22.2% | 59.0% | 94.6% | 1.44 |
 | qwen3.5:9b (prompt v2) | 61.3% | 56.5% | 95.0% | 52.3% | 70.3% | 97.7% | 1.83 |
 | qwen3.5:4b (prompt v1) | 70.1% | 66.3% | 96.7% | 65.7% | 74.5% | 97.9% | 1.08 |
-| **qwen3.5:4b (final prompt, default)** | **70.7%** | **66.5%** | **100%** | **65.7%** | **75.7%** | **97.9%** | **1.20** |
+| qwen3.5:4b (final prompt) | 70.7% | 66.5% | 100% | 65.7% | 75.7% | 97.9% | 1.20 |
+| Laya fine-tune + qwen3.5:0.8b | 82.2% | 80.1% | 96.7% | 76.6% | 87.9% | 96.4% | 0.95 |
+| **Laya fine-tune + qwen3.5:2b (default, "lite")** | **91.4%** | **90.4%** | **98.3%** | **90.8%** | **92.1%** | **96.9%** | **2.37** |
+
+The **lite** pipeline asks Laya-Bangla which kind of action is wanted (27 choices, ~15–60 ms),
+then gives the small model only that action's one to seven tools; simple successes get a
+built-in Bangla or English reply. It is both lighter (one 2.7 GB model instead of 3.3 GB) and
+far more accurate, mostly on Bangla. Its median time was measured while another training job
+shared the GPU; the 0.8b row also swapped models in and out of GPU memory.
+
+### The action decider
+
+Laya-Bangla ([`algolyzer/laya-bangla`](https://huggingface.co/algolyzer/laya-bangla)) was
+fine-tuned to pick one of Sohayok's 27 actions (`sohayok setup --train-decider`, 65 min on the
+RTX 4060, peak 3.2 GB):
+
+- **Training data:** MASSIVE `bn-BD` and `en-US` *train* splits (23,028 real requests) with
+  their 60 intents mapped to actions (intents a PC cannot do become "other"), plus 1,301
+  template sentences for desktop actions MASSIVE lacks, in Bangla, Banglish, and English
+  (synthetic; generated sentences within 90% similarity of a benchmark command were
+  dropped). Large classes were capped and rare ones topped up to 400 with varied phrasing.
+- **Validation:** MASSIVE validation split plus 10% of the template sentences; best epoch by
+  validation loss (epoch 2, 88.3% validation accuracy).
+
+| Decider | All (478) | MASSIVE test (418) | Desktop (60) | Bangla | English |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Laya-Bangla, zero-shot | 63.4% | 65.1% | 51.7% | 65.3% | 61.5% |
+| **Laya-Bangla fine-tuned** | **91.8%** | **92.3%** | **88.3%** | **91.6%** | **92.1%** |
+
+The MASSIVE test split was never used for training or selection. The desktop commands were
+written by the same developer as the templates, so treat that column as optimistic.
 
 - Every row except "fast path only" includes the fast path, which answers 6.5% of cases
   instantly; 27 of its 31 answers pass, and the four others are MASSIVE requests that start
@@ -139,6 +169,35 @@ itself is then immediate, except for web lookups.
 
 Typical remaining errors: "নতুন ট্যাব" heard as "নতুন ট্যাপ" (now handled by the fast path),
 punctuation inside dictated text, and Banglish with English-voice pronunciation.
+
+## 4. Wake word ("Tammy")
+
+There is no ready-made "Tammy" model, so one was trained (`sohayok.training.wake_word`) on top
+of openWakeWord's frozen speech embeddings:
+
+- **Positives:** "Tammy", "Hey Tammy", "Tammy!", "Tammy?", "টামি", "ট্যামি", "হেই টামি" from
+  Microsoft neural voices in English (US, UK, India, …) and South Asian languages, at three
+  speeds and pitches, each copied six times with speed changes, echo, noise, and volume
+  from normal down to a very quiet microphone (−44 dB). 2,826 training clips.
+- **Negatives:** FLEURS Bangla test and English test speech (2 s windows), look-alike words
+  ("Tommy", "tummy", "Timmy", "timer", "তুমি", "আমি", "টমেটো", …), and silence. 8,664 clips.
+- **Held out:** 20% of the voices (never heard in training) and FLEURS Bangla *validation*
+  speech (never used at all).
+
+Live, the detector runs on the CPU 12.5 times a second; when it fires, Whisper large-v3-turbo
+transcribes the last 2 s and the wake is accepted only if it heard the name.
+
+| Held-out test | Result |
+| --- | ---: |
+| "Tammy" phrases from 43 unseen voice/phrase pairs: detector fires | 100% |
+| … and Whisper confirms (the app wakes) | **93%** |
+| Unseen Bangla speech (1.0 h, FLEURS validation): detector candidates | 18 per hour |
+| … false wake-ups after the Whisper check | **0 per hour** |
+
+The three misses were Whisper hearing "Hey Tammy" as "Thank you." or "Page camming." and
+"ট্যামি" as "Can you?". Synthetic voices are cleaner than a real room, so expect somewhat lower
+detection with a real microphone; lower `wake_threshold` if it misses you, raise it if it
+wakes by itself.
 
 ## Live checks
 
