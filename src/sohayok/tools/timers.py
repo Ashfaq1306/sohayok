@@ -159,6 +159,149 @@ def cancel_reminder(reminder_id: str) -> str:
     return "cancelled"
 
 
+# Bangla names of Bangladesh's divisions, districts, and other common places; the weather
+# service only searches English names.
+BANGLA_PLACES = {
+    "ঢাকা": "Dhaka",
+    "চট্টগ্রাম": "Chittagong",
+    "চট্রগ্রাম": "Chittagong",
+    "সিলেট": "Sylhet",
+    "রাজশাহী": "Rajshahi",
+    "খুলনা": "Khulna",
+    "বরিশাল": "Barisal",
+    "রংপুর": "Rangpur",
+    "ময়মনসিংহ": "Mymensingh",
+    "কুমিল্লা": "Comilla",
+    "গাজীপুর": "Gazipur",
+    "নারায়ণগঞ্জ": "Narayanganj",
+    "কক্সবাজার": "Cox's Bazar",
+    "বগুড়া": "Bogra",
+    "যশোর": "Jessore",
+    "দিনাজপুর": "Dinajpur",
+    "ফরিদপুর": "Faridpur",
+    "নোয়াখালী": "Noakhali",
+    "ফেনী": "Feni",
+    "টাঙ্গাইল": "Tangail",
+    "পাবনা": "Pabna",
+    "কুষ্টিয়া": "Kushtia",
+    "সাভার": "Savar",
+    "নরসিংদী": "Narsingdi",
+    "ব্রাহ্মণবাড়িয়া": "Brahmanbaria",
+    "চাঁদপুর": "Chandpur",
+    "লক্ষ্মীপুর": "Lakshmipur",
+    "পটুয়াখালী": "Patuakhali",
+    "ভোলা": "Bhola",
+    "সাতক্ষীরা": "Satkhira",
+    "বাগেরহাট": "Bagerhat",
+    "নাটোর": "Natore",
+    "নওগাঁ": "Naogaon",
+    "জামালপুর": "Jamalpur",
+    "শেরপুর": "Sherpur",
+    "নেত্রকোনা": "Netrokona",
+    "কিশোরগঞ্জ": "Kishoreganj",
+    "হবিগঞ্জ": "Habiganj",
+    "মৌলভীবাজার": "Moulvibazar",
+    "সুনামগঞ্জ": "Sunamganj",
+    "রাঙ্গামাটি": "Rangamati",
+    "বান্দরবান": "Bandarban",
+    "খাগড়াছড়ি": "Khagrachhari",
+    "কুড়িগ্রাম": "Kurigram",
+    "গাইবান্ধা": "Gaibandha",
+    "ঠাকুরগাঁও": "Thakurgaon",
+    "পঞ্চগড়": "Panchagarh",
+    "নীলফামারী": "Nilphamari",
+    "লালমনিরহাট": "Lalmonirhat",
+    "জয়পুরহাট": "Joypurhat",
+    "সিরাজগঞ্জ": "Sirajganj",
+    "মানিকগঞ্জ": "Manikganj",
+    "মুন্সীগঞ্জ": "Munshiganj",
+    "গোপালগঞ্জ": "Gopalganj",
+    "মাদারীপুর": "Madaripur",
+    "শরীয়তপুর": "Shariatpur",
+    "রাজবাড়ী": "Rajbari",
+    "মাগুরা": "Magura",
+    "ঝিনাইদহ": "Jhenaidah",
+    "নড়াইল": "Narail",
+    "চুয়াডাঙ্গা": "Chuadanga",
+    "মেহেরপুর": "Meherpur",
+    "পিরোজপুর": "Pirojpur",
+    "ঝালকাঠি": "Jhalokati",
+    "বরগুনা": "Barguna",
+    "চাঁপাইনবাবগঞ্জ": "Chapai Nawabganj",
+    "সেন্টমার্টিন": "Saint Martin's Island",
+    "কলকাতা": "Kolkata",
+    "দিল্লি": "Delhi",
+    "লন্ডন": "London",
+    "নিউ ইয়র্ক": "New York",
+    "দুবাই": "Dubai",
+    "সৌদি আরব": "Riyadh",
+    "মক্কা": "Mecca",
+    "টোকিও": "Tokyo",
+}
+
+
+def _normalized_places() -> dict[str, str]:
+    from sohayok.lang import normalize
+
+    return {normalize(k): v for k, v in BANGLA_PLACES.items()}
+
+
+def english_city(city: str) -> str:
+    """'ঢাকার' / 'ঢাকা শহর' / 'Dhaka' -> a name the geocoder knows."""
+    from sohayok.lang import normalize
+
+    key = normalize(city).strip(" ?।")
+    for suffix in ("শহরের", "শহর", "জেলার", "জেলা", "এর", "য়ের", "ের", "র", "তে", "য়", "এ", "ে"):
+        if key in _PLACES:
+            break
+        if key.endswith(suffix):
+            key = key[: -len(suffix)].strip()
+    return _PLACES.get(key, city)
+
+
+_PLACES = _normalized_places()
+
+
+def bangla_genitive(english_name: str) -> str:
+    """'Dhaka' -> 'ঢাকার', 'Sylhet' -> 'সিলেটের' (other places keep their English name)."""
+    names: dict[str, str] = {}
+    for bangla, english in BANGLA_PLACES.items():
+        names.setdefault(english, bangla)  # the first (standard) spelling wins
+    name = names.get(english_name)
+    if name is None:
+        return f"{english_name}-এর"
+    return name + ("র" if name[-1] in "ািীুূেৈোৌ" else "ের")
+
+
+def bn_number(value: float) -> str:
+    from sohayok.lang import to_bangla_digits
+
+    return to_bangla_digits(round(value))
+
+
+WEATHER_BN = {
+    0: "আকাশ পরিষ্কার",
+    1: "আকাশ প্রায় পরিষ্কার",
+    2: "আংশিক মেঘলা",
+    3: "আকাশ মেঘলা",
+    45: "কুয়াশা",
+    48: "কুয়াশা",
+    51: "হালকা গুঁড়ি গুঁড়ি বৃষ্টি",
+    53: "গুঁড়ি গুঁড়ি বৃষ্টি",
+    55: "ঘন গুঁড়ি বৃষ্টি",
+    61: "হালকা বৃষ্টি",
+    63: "বৃষ্টি",
+    65: "ভারী বৃষ্টি",
+    71: "হালকা তুষার",
+    73: "তুষারপাত",
+    75: "ভারী তুষারপাত",
+    80: "দমকা বৃষ্টি",
+    81: "দমকা বৃষ্টি",
+    82: "প্রবল দমকা বৃষ্টি",
+    95: "বজ্রঝড়",
+    96: "শিলাবৃষ্টিসহ বজ্রঝড়",
+    99: "শিলাবৃষ্টিসহ বজ্রঝড়",
+}
 WEATHER_CODES = {
     0: "clear sky",
     1: "mainly clear",
@@ -192,7 +335,7 @@ WEATHER_CODES = {
 def weather(city: str = "") -> dict[str, str]:
     from sohayok.config import current
 
-    city = city or current().assistant.home_city
+    city = english_city(city or current().assistant.home_city)
     with httpx.Client(timeout=10) as client:
         places = (
             client.get(
@@ -216,7 +359,21 @@ def weather(city: str = "") -> dict[str, str]:
             },
         ).json()
     now, daily = data["current"], data["daily"]
+    code = now["weather_code"]
     return {
+        "spoken_bn": (
+            f"{bangla_genitive(place['name'])} আবহাওয়া: এখন {bn_number(now['temperature_2m'])} ডিগ্রি, "
+            f"{WEATHER_BN.get(code, 'আবহাওয়া অজানা')}। আজ "
+            f"{bn_number(daily['temperature_2m_min'][0])} থেকে "
+            f"{bn_number(daily['temperature_2m_max'][0])} ডিগ্রি, বৃষ্টির সম্ভাবনা "
+            f"{bn_number(daily['precipitation_probability_max'][0])} শতাংশ।"
+        ),
+        "spoken_en": (
+            f"In {place['name']} it's {round(now['temperature_2m'])} degrees and "
+            f"{WEATHER_CODES.get(code, 'unknown')}. Today {round(daily['temperature_2m_min'][0])} "
+            f"to {round(daily['temperature_2m_max'][0])} degrees, "
+            f"{daily['precipitation_probability_max'][0]}% chance of rain."
+        ),
         "place": f"{place['name']}, {place.get('country', '')}",
         "now": f"{now['temperature_2m']}°C, {WEATHER_CODES.get(now['weather_code'], 'unknown')}, "
         f"humidity {now['relative_humidity_2m']}%, wind {now['wind_speed_10m']} km/h",

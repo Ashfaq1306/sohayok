@@ -159,3 +159,24 @@ def test_play_youtube_falls_back_to_search_results(monkeypatch):
     monkeypatch.setattr(browser, "first_youtube_video", nothing)
     assert "search results" in browser.play_youtube("some shorts only")
     assert opened == ["https://www.youtube.com/results?search_query=some+shorts+only"]
+
+
+def test_bangla_place_names_reach_the_weather_service():
+    from sohayok.tools.timers import english_city
+
+    assert english_city("ঢাকার") == "Dhaka"
+    assert english_city("সিলেটের") == "Sylhet"
+    assert english_city("কক্সবাজারে") == "Cox's Bazar"
+    assert english_city("চট্টগ্রাম শহর") == "Chittagong"
+    assert english_city("Khulna") == "Khulna"
+
+
+def test_bangla_weather_place_names():
+    from sohayok.tools.timers import bangla_genitive
+
+    assert [bangla_genitive(n) for n in ("Dhaka", "Sylhet", "Chittagong", "Paris")] == [
+        "ঢাকার",
+        "সিলেটের",
+        "চট্টগ্রামের",
+        "Paris-এর",
+    ]

@@ -167,6 +167,22 @@ Before the language-detection fix, Bangla commands had 57.9% WER and picked the 
 speaking (the recorder waits 0.9 s of silence first) and 1.2 s to understand; the action
 itself is then immediate, except for web lookups.
 
+The pipeline row above used qwen3.5:4b; the spoken-command run has not been repeated with the
+lite pipeline yet, whose typed-command accuracy is 20 points higher (section 2).
+
+**Quiet microphones and beam search** (same 204 clips, speech recognition only; times are
+inflated because another training job shared the GPU):
+
+| Setting | Bangla WER / CER | English WER / CER | Right language bn / en |
+| --- | --- | --- | --- |
+| Normal level, beam 1 (default) | 15.9% / 7.2% | 9.9% / 5.7% | 96.1% / 98.0% |
+| Quiet microphone (−22 dB), beam 1 | 15.7% / 7.2% | 10.6% / 6.2% | 96.1% / 97.1% |
+| Normal level, beam 5 | 16.2% / 7.2% | 9.9% / 5.6% | 96.1% / 98.0% |
+
+Recordings are now levelled before recognition, and the speech detector adapts its gain, so a
+quiet microphone recognizes as well as a normal one. A wider beam search does not help these
+short commands, so Sohayok keeps beam 1.
+
 Typical remaining errors: "নতুন ট্যাব" heard as "নতুন ট্যাপ" (now handled by the fast path),
 punctuation inside dictated text, and Banglish with English-voice pronunciation.
 

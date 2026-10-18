@@ -73,6 +73,17 @@ SUMMARY_PROMPT = (
 LANGUAGE = {"bn": "natural Bangla (Bangla script)", "en": "English"}
 
 
+def _prepared_reply(result: str, language: str) -> str:
+    """Tools such as weather return a ready sentence ("spoken_bn"/"spoken_en")."""
+    if not result.startswith("{"):
+        return ""
+    try:
+        data = json.loads(result)
+    except json.JSONDecodeError:
+        return ""
+    return data.get(f"spoken_{language}", "") if isinstance(data, dict) else ""
+
+
 class LiteBrain:
     def __init__(
         self,
@@ -177,6 +188,9 @@ class LiteBrain:
                 return Reply(template.format(**{k: v for k, v in args.items()}), calls, 2)
             except (KeyError, IndexError):
                 return Reply(re.sub(r"\{\w+\}\s*", "", template), calls, 2)
+        spoken = _prepared_reply(result, language)
+        if spoken:  # the tool already phrased exact numbers; a small model could garble them
+            return Reply(spoken, calls, 2)
         if name == "current_time":
             spoken = f"এখন {result}।" if language == "bn" else f"It's {result}."
             return Reply(spoken, calls, 2)
