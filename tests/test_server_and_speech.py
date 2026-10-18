@@ -138,3 +138,13 @@ def test_multilingual_proxy_delegates():
     proxy = _Multilingual(Model())
     assert proxy.is_multilingual is True
     assert proxy.n_mels == 128 and proxy.generate() == "generated"
+
+
+def test_choose_language_treats_indic_guesses_as_bangla():
+    from sohayok.stt import choose_language
+
+    # Whisper's typical guess for a short Bangla command: Hindi first, English low.
+    assert choose_language({"hi": 0.51, "gu": 0.2, "en": 0.05, "bn": 0.03}, ["bn", "en"])[0] == "bn"
+    assert choose_language({"en": 0.93, "bn": 0.01}, ["bn", "en"]) == ("en", 0.93)
+    assert choose_language({"en": 0.2, "fr": 0.7, "de": 0.1}, ["fr", "de"])[0] == "fr"
+    assert choose_language({}, ["bn", "en"])[0] == "bn"

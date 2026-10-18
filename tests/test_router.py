@@ -44,6 +44,10 @@ from sohayok.router import route
         ("ওয়াইফাই সেটিংস খোলো", "open_settings", {"page": "wifi"}),
         ("নতুন ট্যাব খোলো", "press_keys", {"keys": "ctrl+t"}),
         ("সহায়ক, ক্রোম খোলো", "open_app", {"name": "Google Chrome"}),
+        # Spellings the speech recognizer actually produced in the voice benchmark.
+        ("ক্রম বন্ধ করো", "close_app", {"name": "Google Chrome"}),
+        ("এখন কয়েকটা বাজে", "current_time", {}),
+        ("নতুন ট্যাপ খোলো", "press_keys", {"keys": "ctrl+t"}),
     ],
 )
 def test_fast_path(text, tool, args):

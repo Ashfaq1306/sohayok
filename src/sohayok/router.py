@@ -121,7 +121,7 @@ def _previous(m, text):
 
 @rule(
     r"(?:what(?:'s| is) the time|what time is it|time|tell me the time|"
-    r"কয়টা বাজে|কটা বাজে|এখন কয়টা বাজে|এখন কটা বাজে|সময় কত|এখন সময় কত|ক'টা বাজে|"
+    r"কয়টা বাজে|কটা বাজে|কয়েকটা বাজে|এখন কয়টা বাজে|এখন কটা বাজে|এখন কয়েকটা বাজে|সময় কত|এখন সময় কত|ক'টা বাজে|"
     r"koyta baje|ekhon koyta baje|somoy koto)"
 )
 def _time(m, text):
@@ -171,7 +171,7 @@ def _maximize(m, text):
     return Intent("window_action", {"action": "maximize"}, {"bn": "ঠিক আছে।", "en": "Done."})
 
 
-@rule(r"(?:new tab|open (?:a )?new tab|নতুন ট্যাব(?: খোলো)?|notun tab kholo)")
+@rule(r"(?:new tab|open (?:a )?new tab|নতুন (?:ট্যাব|ট্যাপ)(?: খোলো)?|notun tab kholo)")
 def _new_tab(m, text):
     return Intent("press_keys", {"keys": "ctrl+t"}, {"bn": "নতুন ট্যাব।", "en": "New tab."})
 

@@ -20,6 +20,7 @@ ALIASES = {
     "google chrome": "Google Chrome",
     "ক্রোম": "Google Chrome",
     "গুগল ক্রোম": "Google Chrome",
+    "ক্রম": "Google Chrome",  # how speech recognition often spells "Chrome"
     "browser": "Google Chrome",
     "ব্রাউজার": "Google Chrome",
     "edge": "Microsoft Edge",

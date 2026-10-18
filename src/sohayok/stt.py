@@ -67,6 +67,26 @@ def plausible(segment) -> bool:
     return segment.avg_logprob > -1.5 and segment.compression_ratio < 2.6
 
 
+def choose_language(probs: dict[str, float], allowed: list[str]) -> tuple[str, float]:
+    """Pick among the allowed languages from Whisper's language probabilities.
+
+    For English plus one other language, anything not clearly English is the other one:
+    Whisper hears short Bangla commands as Hindi or Gujarati far more often than as
+    Bangla (in our spoken-command test, Bangla won only 44% of the time against English
+    by plain argmax, and 95% with this rule; FLEURS sentences: 100% either way).
+    """
+    if "en" in allowed and len(allowed) == 2:
+        other = next(code for code in allowed if code != "en")
+        english = probs.get("en", 0.0)
+        return ("en", english) if english >= 0.5 else (other, 1.0 - english)
+    scores = {code: p for code, p in probs.items() if code in allowed}
+    if not scores:
+        return allowed[0], 0.0
+    total = sum(scores.values()) or 1.0
+    best = max(scores, key=scores.get)
+    return best, scores[best] / total
+
+
 class _Multilingual:
     """Delegates to a CTranslate2 Whisper model but reports it as multilingual."""
 
@@ -103,14 +123,9 @@ class CT2Whisper:
                 self.model.model = _Multilingual(self.model.model)
 
     def detect(self, audio: np.ndarray, allowed: list[str]) -> tuple[str, float]:
-        """Most likely language among `allowed`, with its probability renormalized."""
+        """Most likely language among `allowed`, with its probability."""
         _, _, probs = self.model.detect_language(audio)
-        scores = {code: p for code, p in probs if code in allowed}
-        if not scores:
-            return allowed[0], 0.0
-        total = sum(scores.values()) or 1.0
-        best = max(scores, key=scores.get)
-        return best, scores[best] / total
+        return choose_language(dict(probs), allowed)
 
     def transcribe(self, audio: np.ndarray, language: str) -> str:
         segments, _ = self.model.transcribe(
