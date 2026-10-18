@@ -1,0 +1,173 @@
+# Benchmarks
+
+Measured on 2026-10-18 on one PC: NVIDIA GeForce RTX 4060 (8 GB), AMD Ryzen 7 9700X, 62 GB
+RAM, Windows 11, Python 3.12, PyTorch 2.8.0+cu128, CTranslate2 4.8.3, faster-whisper 1.2.1,
+Ollama 0.40.5. Commands to reproduce are at the end.
+
+Three questions, three benchmarks:
+
+1. **Does it hear Bangla and English correctly?** Speech recognition on FLEURS, real read
+   speech by many speakers.
+2. **Does it do the right thing?** Tool choice and reply language for typed commands: MASSIVE
+   assistant requests in Bangla and English, plus hand-written desktop commands.
+3. **Does it all work together from speech?** Spoken commands, end to end.
+
+## 1. Speech recognition (FLEURS)
+
+[FLEURS](https://huggingface.co/datasets/google/fleurs) (CC BY 4.0) test splits: 200 Bangla
+(`bn_in`) and 100 English (`en_us`) sentences, one recording per sentence, chosen with a fixed
+seed. Transcripts are compared after Unicode NFC, lowercasing, and removing punctuation
+(including the dari "।"). Python's regex `\w` does not match Bangla vowel signs or the
+hasanta, so punctuation is removed by Unicode category instead; an earlier version of this
+script used `\w` and over-counted Bangla errors.
+
+| Model | Bangla WER | Bangla CER | English WER | English CER |
+| --- | ---: | ---: | ---: | ---: |
+| Whisper large-v3-turbo (CTranslate2 int8) | 87.3% | 49.6% | 4.7% | 2.0% |
+| Whisper large-v3 (CTranslate2 int8) | 77.2% | 39.4% | 4.3% | 2.0% |
+| **BuzzASR Bengali (CTranslate2 int8, as shipped by `sohayok setup`)** | **21.6%** | **9.1%** | — | — |
+
+- BuzzASR is Bangla-only, so Sohayok uses large-v3-turbo to tell Bangla from English and to
+  transcribe English, and BuzzASR for Bangla. Off-the-shelf Whisper drifts into Devanagari and
+  truncates long Bangla sentences; BuzzASR's native Bangla tokenizer avoids both.
+- BuzzASR was fine-tuned on FLEURS and Common Voice **training** data; these are the
+  held-out FLEURS **test** recordings, but they are in-domain for it. Its model card reports
+  31.97% WER / 10.16% CER on FLEURS with its own normalization.
+- On a 20-sentence subset, the int8 CTranslate2 conversion scored 16.0% WER / 4.1% CER and the
+  original float16 Transformers model 29.7% / 8.5% with the decoding settings from its model
+  card (repetition penalty 1.2, no repeated 3-grams), which visibly corrupted some words.
+- Many remaining "errors" are numbers spoken as words ("সত্তর") where the reference has digits
+  ("৭০"), and spelling variants (মন্ত্রিসভা / মন্ত্রীসভা).
+
+### Converting BuzzASR correctly
+
+Two problems made a naive conversion silently wrong:
+
+1. **Token ids.** The repository's `vocab.json` lists ~1,500 special strings (`<|endoftext|>`,
+   `<|transcribe|>`, …) at low ids, while `added_tokens.json` places them at 51865 and up. A
+   fast tokenizer built from these files assigns `<|bn|>` the id 51908 instead of 51910, so
+   the model would be prompted with the wrong language token. `sohayok setup` renames the
+   clashing vocabulary entries, keeps every id, checks the special-token ids against
+   `generation_config.json`, and confirms that 200/200 reference sentences tokenize
+   identically and round-trip exactly.
+2. **"English-only".** CTranslate2 infers from the vocabulary layout that the converted model
+   is English-only, so faster-whisper would drop the `<|bn|>` prompt and decode as English.
+   Sohayok records the 100 language tokens in the model config and tells faster-whisper the
+   model is multilingual.
+
+### Bangla or English?
+
+Whisper's language detector often hears **short** Bangla commands as Hindi or Gujarati. Taking
+the likelier of Bangla and English sent most spoken Bangla commands to the English
+recognizer. Sohayok now treats anything that is not clearly English (p(en) < 0.5) as Bangla:
+
+| Rule | Spoken Bangla commands | Spoken English commands | FLEURS Bangla | FLEURS English |
+| --- | ---: | ---: | ---: | ---: |
+| more likely of bn and en | 44.1% | 100% | 99% | 100% |
+| **English only if p(en) ≥ 0.5** | **95.1%** | **97.1%** | **100%** | **100%** |
+
+Spoken commands: the 102 + 102 clips of benchmark 3. FLEURS: 100 + 100 recordings. Two of
+the three "English" clips sent to the Bangla recognizer are Banglish ("chrome bondho koro"),
+which BuzzASR writes in Bangla script, where the fast path understands it. The five Bangla
+clips sent to the English recognizer are mostly full of English loanwords ("ডাউনলোড ফোল্ডার
+খোলো", "ওয়াইফাই সেটিংস খোলো").
+
+## 2. Command understanding (typed)
+
+Each case is one request; every tool is replaced by a stub that records the call and returns
+a plausible result, and confirmations are answered "yes". A case passes when the expected
+tools are called in order (any of the accepted tools per step), and "+ args" also requires
+key arguments (for example volume level 50, city Sylhet). Reply language counts replies in
+Bangla script for Bangla requests and in English otherwise.
+
+- **MASSIVE** ([Amazon](https://huggingface.co/datasets/mteb/amazon_massive_intent),
+  CC BY 4.0) test utterances in `bn-BD` and `en-US`, for the 18 intents that map onto
+  Sohayok's tools (alarms → reminders, volume, music, time, weather, questions, news, email,
+  jokes): up to 12 utterances per intent, in both languages, 418 cases. Several MASSIVE
+  intents fit a PC poorly (tuning an FM radio, podcast episodes, "email query" for an email
+  app the PC may not have), so these numbers understate desktop accuracy.
+- **Desktop commands** (`src/sohayok/bench/desktop_commands.jsonl`): 60 hand-written
+  requests in Bangla, English, and Banglish for what MASSIVE lacks (apps, windows, typing,
+  files, settings, GitHub, power, clipboard, screen). Written by the developer: a smoke test,
+  not a representative sample.
+
+| Pipeline | All (478) | MASSIVE (418) | Desktop (60) | Bangla (239) | English (239) | Reply language | Median s |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Fast path only (no model) | 11.1% | 6.2% | 45.0% | 10.9% | 11.3% | — | 0.00 |
+| gemma4:e4b-it-qat | 40.6% | 34.7% | 81.7% | 22.2% | 59.0% | 94.6% | 1.44 |
+| qwen3.5:9b (prompt v2) | 61.3% | 56.5% | 95.0% | 52.3% | 70.3% | 97.7% | 1.83 |
+| qwen3.5:4b (prompt v1) | 70.1% | 66.3% | 96.7% | 65.7% | 74.5% | 97.9% | 1.08 |
+| **qwen3.5:4b (final prompt, default)** | **70.7%** | **66.5%** | **100%** | **65.7%** | **75.7%** | **97.9%** | **1.20** |
+
+- Every row except "fast path only" includes the fast path, which answers 6.5% of cases
+  instantly; 27 of its 31 answers pass, and the four others are MASSIVE requests that start
+  with "search …" or say "next", where searching or skipping is a reasonable reading.
+- qwen3.5:9b is both slower and less accurate here; at 6.4 GB it also does not fit beside the
+  speech models in 8 GB, so part of it runs on the CPU.
+- gemma4 and prompt v1 ran while another benchmark shared the GPU, so their times are high;
+  accuracy is unaffected.
+- **Caveat:** the prompt was revised twice against this same set (v1 → v2 fixed jokes being
+  searched instead of told; v2 → final restored looking up facts instead of answering from
+  memory). The final numbers are therefore somewhat optimistic.
+- Remaining weak spots: radio, podcasts, and audiobooks (5–6 of 24 each), "check my email"
+  when no mail app is configured (4/24), and vague volume requests.
+
+## 3. Spoken commands, end to end
+
+The 60 desktop commands plus 4 MASSIVE utterances per intent in both languages (204 clips)
+were synthesized with Microsoft neural voices (`bn-BD-NabanitaNeural`, `bn-BD-PradeepNeural`,
+`en-US-AvaMultilingualNeural`, `en-IN-PrabhatNeural`), resampled to 16 kHz, and passed through
+the real pipeline: language detection → recognizer → fast path or qwen3.5:4b → stubbed tools.
+Synthetic speech is clean and evenly paced, so treat this as an upper bound for real
+microphones; FLEURS above covers real voices.
+
+| | All (204) | Desktop (60) | MASSIVE (144) | Bangla (102) | English (102) |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Right tool | **75.5%** | 90.0% | 69.4% | 71.6% | 79.4% |
+| Right tool + args | 74.0% | 85.0% | 69.4% | 70.6% | 77.5% |
+| Reply in the user's language | 97.5% | 98.3% | 97.2% | 99.0% | 96.1% |
+
+| Speech recognition on the commands | WER | CER | Right language | Median time |
+| --- | ---: | ---: | ---: | ---: |
+| Bangla | 16.2% | 7.8% | 95.1% | 0.60 s |
+| English | 10.4% | 6.4% | 97.1% | 0.39 s |
+
+Before the language-detection fix, Bangla commands had 57.9% WER and picked the right tool
+54.9% of the time. A typical spoken command takes about 0.6 s to transcribe after you stop
+speaking (the recorder waits 0.9 s of silence first) and 1.2 s to understand; the action
+itself is then immediate, except for web lookups.
+
+Typical remaining errors: "নতুন ট্যাব" heard as "নতুন ট্যাপ" (now handled by the fast path),
+punctuation inside dictated text, and Banglish with English-voice pronunciation.
+
+## Live checks
+
+- **Notepad dictation, for real**: "নোটপ্যাড খুলে লেখো: আমি ভালো আছি, তুমি কেমন আছো?" opened
+  a blank Notepad and the text, read back through UI Automation, matched exactly. (A first
+  attempt typed into a file that Notepad had restored from its last session, before Notepad
+  had finished loading. That led to waiting for the window, pasting Bangla through the
+  clipboard, never overwriting a selection, and opening a blank Notepad tab.)
+- **Chrome and the desktop window**: Bangla questions answered with live weather and system
+  status; a restart request showed "কম্পিউটার রিস্টার্ট করব? হ্যাঁ বা না বলুন।", "না"
+  cancelled it, and the reply said it was not done.
+- **Wake word**: "hey jarvis" scored 0.98–0.999 with five synthetic voices, including two
+  Bangladeshi Bangla voices; other phrases stayed below 0.03.
+- **Read-only desktop tests** (`SOHAYOK_DESKTOP_TESTS=1 pytest -m desktop`): Start-menu index
+  (142 apps), windows, screenshot, UI Automation, volume, system status, microphone.
+- The microphone itself was checked for input, but no human speech was recorded for these
+  benchmarks.
+
+## Reproduce
+
+```powershell
+# data: FLEURS test parquet (refs/convert/parquet, revision 70bb2e84) and MASSIVE test files
+uv run python -m sohayok.bench.stt --data <fleurs> --output out/stt `
+  --model deepdml/faster-whisper-large-v3-turbo-ct2 --model Systran/faster-whisper-large-v3
+uv run python -m sohayok.bench.stt --data <fleurs> --output out/stt --en 0 `
+  --model "$env:APPDATA\Sohayok\models\BuzzASR-bengali-ct2"
+uv run python -m sohayok.bench.brain --massive <massive> --output out/brain --model qwen3.5:4b
+uv run python -m sohayok.bench.voice --massive <massive> --output out/voice
+uv run python -m sohayok.bench.report out
+```
+
+Every run writes per-item JSONL (reference, transcript, tool calls, reply) next to its summary.
