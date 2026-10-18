@@ -297,17 +297,17 @@ def cmd_setup(args: argparse.Namespace) -> None:
             subprocess.run([ollama, "pull", model], check=False)
     else:
         print("Ollama is not installed: winget install Ollama.Ollama")
-    from sohayok.decide import resolve_decider
-
     if args.train_decider:
         from sohayok.training.prepare import train_decider
 
         print(f"decision model ready: {train_decider(config_module.app_dir())}")
-    elif "sohayok" not in resolve_decider("auto")[0]:
-        print(
-            "Decisions use the published Laya-Bangla. For Sohayok's fine-tuned decider "
-            "(91.8% vs 63.4% right actions), run: sohayok setup --train-decider  (~1 h on a GPU)"
-        )
+    else:
+        from huggingface_hub import snapshot_download
+
+        from sohayok.decide import DECIDER_REPO, DECIDER_REVISION
+
+        snapshot_download(DECIDER_REPO, revision=DECIDER_REVISION)
+        print(f"decision model ready: {DECIDER_REPO}")
 
 
 def cmd_install(args: argparse.Namespace) -> None:

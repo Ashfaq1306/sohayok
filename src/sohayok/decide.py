@@ -16,6 +16,9 @@ log = logging.getLogger(__name__)
 
 LAYA_REPO = "algolyzer/laya-bangla"
 LAYA_REVISION = "caeb5631ddfe0efe0f2937aeeae06f8d2d1cf6da"
+# Sohayok's fine-tune of Laya-Bangla for its 28 desktop actions (91.8% vs 63.4% zero-shot).
+DECIDER_REPO = "ashfaq1306/sohayok-laya-actions"
+DECIDER_REVISION = "3fc68f6bccc0ca992890b63cb87c76efe125cd58"
 
 
 @dataclass(frozen=True)
@@ -149,7 +152,8 @@ QUESTION = {
 
 
 def resolve_decider(setting: str) -> tuple[str, str | None]:
-    """(checkpoint, revision). "auto" prefers Sohayok's fine-tune when it has been prepared."""
+    """(checkpoint, revision). "auto": a locally trained decider if there is one (setup
+    --train-decider), otherwise the published fine-tune, pinned to its revision."""
     if setting != "auto":
         return setting, None
     from sohayok.config import app_dir
@@ -157,7 +161,7 @@ def resolve_decider(setting: str) -> tuple[str, str | None]:
     local = app_dir() / "models" / "laya-sohayok-actions"
     if (local / "model.safetensors").exists():
         return str(local), None
-    return LAYA_REPO, LAYA_REVISION
+    return DECIDER_REPO, DECIDER_REVISION
 
 
 @dataclass

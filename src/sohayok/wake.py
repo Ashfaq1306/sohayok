@@ -56,6 +56,9 @@ class WakeWordListener:
         # While True (the assistant is busy or speaking), audio is ignored.
         self.paused: Callable[[], bool] = lambda: False
         self.gain = 1.0
+        # At or above this score the wake is accepted immediately. On held-out audio, 97.7%
+        # of "Tammy"s scored >= 0.8 and no frame of 1 h of Bangla speech did.
+        self.instant_threshold = 0.8
 
     def score(self, frame: np.ndarray) -> float:
         """Wake-word probability for one 80 ms int16 frame."""
@@ -93,16 +96,20 @@ class WakeWordListener:
                 recent.append(frame)
                 if self.paused() or time.monotonic() < cooldown:
                     continue
-                if self.score(frame) < self.threshold:
+                score = self.score(frame)
+                if score < self.threshold:
                     continue
                 audio = np.concatenate(recent).astype(np.float32) / 32768
                 self.model.reset()
                 cooldown = time.monotonic() + 1.5
-                try:
-                    accepted = self.confirm(audio)
-                except Exception:
-                    log.exception("wake confirmation failed")
-                    accepted = True
+                if score >= self.instant_threshold:
+                    accepted = True  # sure enough to wake at once, without waiting for Whisper
+                else:
+                    try:
+                        accepted = self.confirm(audio)
+                    except Exception:
+                        log.exception("wake confirmation failed")
+                        accepted = True
                 if not accepted:
                     continue
                 log.info("wake word heard")
