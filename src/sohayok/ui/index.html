@@ -7,198 +7,356 @@
 <link rel="icon" href="data:,">
 <style>
   :root {
-    --bg: #f6f7f9; --panel: #ffffff; --text: #16181d; --muted: #5d6573; --line: #e3e6eb;
-    --accent: #0f766e; --accent-soft: #e6f4f2; --user: #eef2ff; --user-text: #1e2a5a;
-    --warn: #b45309; --warn-soft: #fff7ed; --danger: #b91c1c; --ok: #15803d;
+    --bg: #04060d; --glass: rgba(18, 28, 56, 0.55); --glass2: rgba(26, 38, 74, 0.72);
+    --line: rgba(120, 170, 255, 0.16); --text: #e6f0ff; --muted: #8a9cc2; --dim: #5d6c8f;
+    --cyan: #2ee6ff; --violet: #9b7bff; --pink: #ff4fd8; --amber: #ffb547; --green: #3ef0a1;
+    --red: #ff5c7a; --accent: var(--cyan); --sky: #12204a;
   }
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) {
-      --bg: #0f1115; --panel: #171a21; --text: #e8eaee; --muted: #9aa3b2; --line: #272c36;
-      --accent: #2dd4bf; --accent-soft: #11302d; --user: #1c2340; --user-text: #d6dcff;
-      --warn: #fbbf24; --warn-soft: #2a2012; --danger: #f87171; --ok: #4ade80;
-    }
-  }
-  :root[data-theme="dark"] {
-    --bg: #0f1115; --panel: #171a21; --text: #e8eaee; --muted: #9aa3b2; --line: #272c36;
-    --accent: #2dd4bf; --accent-soft: #11302d; --user: #1c2340; --user-text: #d6dcff;
-    --warn: #fbbf24; --warn-soft: #2a2012; --danger: #f87171; --ok: #4ade80;
+  :root[data-theme="light"] {
+    --bg: #e9efff; --glass: rgba(255, 255, 255, 0.72); --glass2: rgba(255, 255, 255, 0.92);
+    --line: rgba(40, 70, 140, 0.16); --text: #0d1530; --muted: #46557a; --dim: #6f7c9c; --sky: #ffffff;
+    --green: #0b9e62; --red: #d6304f; --amber: #b86e00;
   }
   * { box-sizing: border-box; }
+  body > header, body > .sub, body > .stage, body > main, body > footer { width: min(100%, 860px); justify-self: center; }
   html, body { height: 100%; margin: 0; }
   body {
-    background: var(--bg); color: var(--text);
-    font: 15px/1.5 "Segoe UI", "Nirmala UI", "Noto Sans Bengali", system-ui, sans-serif;
-    display: flex; flex-direction: column;
+    background: radial-gradient(1200px 700px at 50% -10%, var(--sky) 0%, var(--bg) 55%) fixed, var(--bg);
+    color: var(--text); overflow: hidden;
+    font: 14.5px/1.5 "Segoe UI Variable Text", "Segoe UI", "Nirmala UI", "Noto Sans Bengali", system-ui, sans-serif;
+    display: grid; grid-template-rows: auto auto auto 1fr auto; height: 100vh;
   }
-  header {
-    display: flex; align-items: center; gap: 10px; padding: 12px 16px;
-    border-bottom: 1px solid var(--line); background: var(--panel);
+  /* faint moving perspective grid; a transform-only animation stays smooth */
+  body::before {
+    content: ""; position: fixed; inset: -50%; z-index: -1; pointer-events: none;
+    background-image: linear-gradient(rgba(80,140,255,.07) 1px, transparent 1px),
+                      linear-gradient(90deg, rgba(80,140,255,.07) 1px, transparent 1px);
+    background-size: 44px 44px; transform: perspective(600px) rotateX(58deg) translateY(0);
+    animation: grid 18s linear infinite; mask-image: linear-gradient(to top, black 10%, transparent 60%);
   }
-  header h1 { font-size: 17px; margin: 0; font-weight: 650; }
-  header .sub { color: var(--muted); font-size: 12px; }
-  .pill {
-    margin-left: auto; font-size: 12px; padding: 3px 10px; border-radius: 999px;
-    background: var(--accent-soft); color: var(--accent); white-space: nowrap;
+  @keyframes grid { to { transform: perspective(600px) rotateX(58deg) translateY(44px); } }
+
+  header { display: flex; align-items: center; gap: 10px; padding: 12px 16px 2px; }
+  .brand { font-weight: 700; letter-spacing: .24em; font-size: 12.5px; text-transform: uppercase; }
+  .brand b { color: var(--accent); text-shadow: 0 0 12px var(--accent); transition: color .4s, text-shadow .4s; }
+  .brand span { color: var(--muted); letter-spacing: .04em; font-weight: 500; margin-left: 6px; text-transform: none; }
+  .hud { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+  .chip-state {
+    font: 600 10.5px/1 "Segoe UI", "Nirmala UI", sans-serif; letter-spacing: .12em; text-transform: uppercase;
+    padding: 6px 10px; border-radius: 999px; border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
+    color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent);
+    transition: color .3s, border-color .3s, background .3s;
   }
-  .pill.listening { background: #fee2e2; color: #b91c1c; }
-  .pill.thinking, .pill.acting, .pill.transcribing { background: var(--warn-soft); color: var(--warn); }
-  main { flex: 1; overflow-y: auto; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
-  .msg { max-width: 88%; padding: 8px 12px; border-radius: 14px; word-wrap: break-word; }
-  .msg.user { align-self: flex-end; background: var(--user); color: var(--user-text); border-bottom-right-radius: 4px; }
-  .msg.bot { align-self: flex-start; background: var(--panel); border: 1px solid var(--line); border-bottom-left-radius: 4px; }
-  .msg .meta { display: block; font-size: 11px; color: var(--muted); margin-top: 2px; }
-  .tool {
-    align-self: flex-start; font: 12px/1.4 ui-monospace, "Cascadia Mono", Consolas, monospace;
-    color: var(--muted); border-left: 2px solid var(--line); padding: 2px 8px; max-width: 95%;
-    white-space: pre-wrap; word-break: break-word;
-  }
-  .tool.err { color: var(--danger); border-color: var(--danger); }
-  .error { align-self: center; color: var(--danger); font-size: 13px; }
-  .confirm {
-    border: 1px solid var(--warn); background: var(--warn-soft); border-radius: 12px; padding: 10px 12px;
-    display: none; margin: 0 16px 10px;
-  }
-  .confirm.show { display: block; }
-  .confirm p { margin: 0 0 8px; }
-  .confirm button { margin-right: 8px; }
-  footer { border-top: 1px solid var(--line); background: var(--panel); padding: 12px 16px; }
-  .row { display: flex; gap: 8px; align-items: center; }
-  .mic {
-    width: 52px; height: 52px; flex: none; border-radius: 50%; border: none; cursor: pointer;
-    background: var(--accent); color: white; display: grid; place-items: center;
-    box-shadow: 0 0 0 0 rgba(239,68,68,.5); transition: background .15s;
-  }
-  .mic.on { background: #dc2626; animation: pulse 1.2s infinite; }
-  @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(220,38,38,.45);} 100% { box-shadow: 0 0 0 14px rgba(220,38,38,0);} }
-  .mic svg { width: 24px; height: 24px; }
-  input[type=text] {
-    flex: 1; min-width: 0; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line);
-    background: var(--bg); color: var(--text); font: inherit;
-  }
-  button.btn {
-    padding: 9px 14px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel);
-    color: var(--text); font: inherit; cursor: pointer;
-  }
-  button.btn.primary { background: var(--accent); color: white; border-color: transparent; }
-  button.btn.no { color: var(--danger); }
-  .hint { color: var(--muted); font-size: 12px; margin-top: 8px; }
-  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-  .chip {
-    font-size: 12.5px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line);
-    background: var(--bg); color: var(--text); cursor: pointer;
-  }
-  kbd { font: 11px ui-monospace, Consolas, monospace; border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
-  .empty { color: var(--muted); text-align: center; margin: auto; max-width: 320px; }
+  .icon-btn { border: 1px solid var(--line); background: var(--glass); color: var(--muted); width: 30px; height: 30px;
+    border-radius: 9px; cursor: pointer; display: grid; place-items: center; font-size: 14px; }
+  .icon-btn:hover { color: var(--text); border-color: color-mix(in srgb, var(--accent) 50%, transparent); }
+  .sub { padding: 0 16px; color: var(--dim); font-size: 10.5px; letter-spacing: .08em; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; }
+
+  /* the core: an animated holographic character on a canvas */
+  .stage { position: relative; display: grid; place-items: center; height: 262px; transition: height .35s ease; }
+  .stage.compact { height: 184px; }
+  canvas#core { width: 250px; height: 250px; transition: width .35s ease, height .35s ease;
+    filter: drop-shadow(0 0 24px color-mix(in srgb, var(--accent) 35%, transparent)); }
+  .stage.compact canvas#core { width: 172px; height: 172px; }
+  .caption { position: absolute; bottom: 0; font-size: 13px; color: var(--muted); text-align: center;
+    max-width: 92%; min-height: 20px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .caption.live { color: var(--text); }
+
+  main { overflow-y: auto; padding: 8px 14px 10px; display: flex; flex-direction: column; gap: 9px;
+    scroll-behavior: smooth; mask-image: linear-gradient(to bottom, transparent 0, black 16px); }
+  main::-webkit-scrollbar { width: 6px; } main::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; }
+  .msg { max-width: 88%; padding: 9px 13px; border-radius: 14px; word-wrap: break-word; position: relative;
+    animation: rise .28s cubic-bezier(.2,.8,.2,1) both; }
+  @keyframes rise { from { opacity: 0; transform: translateY(8px) scale(.98); } }
+  .msg.user { align-self: flex-end; background: linear-gradient(135deg, rgba(46,230,255,.16), rgba(155,123,255,.16));
+    border: 1px solid rgba(46,230,255,.3); border-bottom-right-radius: 4px; }
+  .msg.bot { align-self: flex-start; background: var(--glass); border: 1px solid var(--line); border-bottom-left-radius: 4px; }
+  .msg.bot::before { content: ""; position: absolute; left: -1px; top: 10px; bottom: 10px; width: 2px; border-radius: 2px;
+    background: linear-gradient(var(--cyan), var(--pink)); box-shadow: 0 0 8px var(--cyan); }
+  .meta { display: block; font-size: 10.5px; color: var(--dim); margin-top: 3px; letter-spacing: .04em; }
+  .acts { align-self: flex-start; display: flex; flex-wrap: wrap; gap: 6px; max-width: 100%; animation: rise .25s both; }
+  .act { font-size: 11.5px; padding: 3px 9px; border-radius: 8px; background: rgba(62,240,161,.08);
+    border: 1px solid rgba(62,240,161,.3); color: var(--green); max-width: 100%;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .act.err { background: rgba(255,92,122,.08); border-color: rgba(255,92,122,.38); color: var(--red); }
+  .act.cancel { background: rgba(255,181,71,.08); border-color: rgba(255,181,71,.38); color: var(--amber); }
+  .notice { align-self: center; font-size: 12px; color: var(--red); text-align: center; }
+  .hello { color: var(--muted); text-align: center; margin: 4px auto; max-width: 320px; font-size: 13px; }
+
+  .confirm { position: fixed; inset: auto 14px 104px 14px; z-index: 5; padding: 14px; border-radius: 16px;
+    background: var(--glass2); border: 1px solid rgba(255,181,71,.6); box-shadow: 0 0 40px rgba(255,181,71,.2);
+    transform: translateY(20px); opacity: 0; pointer-events: none; transition: transform .25s ease, opacity .25s ease; }
+  .confirm.show { transform: none; opacity: 1; pointer-events: auto; }
+  .confirm p { margin: 0 0 10px; font-size: 14.5px; }
+  .confirm .row { display: flex; gap: 8px; }
+  .confirm button { flex: 1; padding: 10px; border-radius: 11px; font: 600 14px "Segoe UI", "Nirmala UI", sans-serif;
+    cursor: pointer; border: 1px solid var(--line); color: var(--text); background: var(--glass); }
+  .confirm .yes { background: linear-gradient(135deg, #1fb6d0, #6a5cff); border: none; color: white; }
+  .confirm .no:hover { border-color: var(--red); color: var(--red); }
+
+  footer { padding: 8px 14px 14px; }
+  .bar { display: flex; gap: 8px; align-items: center; padding: 6px; border-radius: 16px; background: var(--glass2);
+    border: 1px solid var(--line); }
+  .bar:focus-within { border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent); }
+  .mic { width: 42px; height: 42px; flex: none; border-radius: 12px; border: none; cursor: pointer; color: #001018;
+    background: linear-gradient(135deg, var(--cyan), var(--violet)); display: grid; place-items: center;
+    box-shadow: 0 0 18px rgba(46,230,255,.35); transition: transform .12s, box-shadow .2s; }
+  .mic:active { transform: scale(.94); }
+  .mic.on { background: linear-gradient(135deg, var(--pink), #ff7a59); box-shadow: 0 0 26px rgba(255,79,216,.55); }
+  .mic svg { width: 20px; height: 20px; }
+  input#text { flex: 1; min-width: 0; padding: 10px 6px; border: none; outline: none; background: transparent;
+    color: var(--text); font: inherit; }
+  input#text::placeholder { color: var(--dim); }
+  .send { border: none; background: transparent; color: var(--muted); cursor: pointer; padding: 8px 10px; border-radius: 10px; font-size: 15px; }
+  .send:hover { color: var(--accent); }
+  .chips { display: flex; gap: 6px; margin-top: 9px; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
+  .chips::-webkit-scrollbar { display: none; }
+  .chip { flex: none; font: 12px "Segoe UI", "Nirmala UI", sans-serif; padding: 5px 11px; border-radius: 999px;
+    border: 1px solid var(--line); background: var(--glass); color: var(--muted); cursor: pointer; transition: color .15s, border-color .15s; }
+  .chip:hover { color: var(--text); border-color: color-mix(in srgb, var(--accent) 50%, transparent); }
+  kbd { font: 10.5px ui-monospace, Consolas, monospace; border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; color: var(--muted); }
+  @media (prefers-reduced-motion: reduce) { body::before { animation: none; } .msg, .acts { animation: none; } }
 </style>
 </head>
 <body>
 <header>
-  <div>
-    <h1>সহায়ক · Sohayok</h1>
-    <div class="sub" id="backend">connecting…</div>
+  <div class="brand"><b>SOHAYOK</b><span>সহায়ক</span></div>
+  <div class="hud">
+    <span class="chip-state" id="state">প্রস্তুত · ready</span>
+    <button class="icon-btn" id="theme" title="Light / dark" aria-label="Toggle theme">◐</button>
   </div>
-  <span class="pill" id="state">idle</span>
 </header>
+<div class="sub" id="backend">CONNECTING…</div>
+<section class="stage" id="stage">
+  <canvas id="core" width="440" height="440" aria-label="Sohayok"></canvas>
+  <div class="caption" id="caption">“Hey Jarvis” বলুন বা Ctrl + Alt + Space চাপুন</div>
+</section>
 <main id="log">
-  <div class="empty" id="empty">“Hey Jarvis” বলুন, মাইক চাপুন, বা <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Space</kbd> দিয়ে বলুন।<br>
-    Say “Hey Jarvis”, press the mic, or <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Space</kbd>, then speak Bangla or English.</div>
+  <div class="hello" id="hello">আমি সহায়ক। বাংলা বা ইংরেজিতে বলুন, আমি আপনার কম্পিউটার চালাব।<br>
+    Speak Bangla or English and I'll run your PC.</div>
 </main>
 <div class="confirm" id="confirm" role="alertdialog" aria-live="assertive">
   <p id="confirm-q"></p>
-  <button class="btn primary" id="yes">হ্যাঁ · Yes</button>
-  <button class="btn no" id="no">না · No</button>
+  <div class="row">
+    <button class="yes" id="yes">হ্যাঁ · Yes</button>
+    <button class="no" id="no">না · No</button>
+  </div>
 </div>
 <footer>
-  <div class="row">
+  <div class="bar">
     <button class="mic" id="mic" title="Talk (Ctrl+Alt+Space)" aria-label="Talk">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><path d="M12 17v5"/></svg>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><path d="M12 17v5"/></svg>
     </button>
     <input type="text" id="text" placeholder="লিখুন বা বলুন… / Type or speak…" autocomplete="off">
-    <button class="btn" id="stop" title="Stop speaking">■</button>
+    <button class="send" id="send" title="Send" aria-label="Send">➤</button>
   </div>
   <div class="chips" id="chips"></div>
 </footer>
 <script>
 const $ = (id) => document.getElementById(id);
 const log = $("log");
-const examples = [
-  "ক্রোম খোলো", "ভলিউম পঞ্চাশ করো", "কয়টা বাজে?", "ইউটিউবে আইয়ুব বাচ্চুর গান চালাও",
-  "open notepad and write hello", "what's the weather today?", "আমার গিটহাবে কী আছে?",
-  "take a screenshot",
-];
+const examples = ["ক্রোম খোলো", "ভলিউম পঞ্চাশ করো", "কয়টা বাজে?", "ঢাকার আবহাওয়া কেমন?",
+  "ইউটিউবে আইয়ুব বাচ্চুর গান চালাও", "open notepad and write hello", "আমার গিটহাবে কী আছে?", "take a screenshot"];
 for (const text of examples) {
   const chip = document.createElement("button");
-  chip.className = "chip"; chip.textContent = text;
-  chip.onclick = () => send(text);
+  chip.className = "chip"; chip.textContent = text; chip.onclick = () => send(text);
   $("chips").append(chip);
 }
-const STATES = {
-  idle: "প্রস্তুত · ready", listening: "শুনছি · listening", transcribing: "বুঝছি · transcribing",
-  thinking: "ভাবছি · thinking", acting: "করছি · acting", speaking: "বলছি · speaking",
-};
 
+// ---------- the core: an animated holographic character ----------
+const STATES = {
+  idle: { label: "ready", bn: "প্রস্তুত", color: [46, 230, 255] },
+  listening: { label: "listening", bn: "শুনছি", color: [46, 230, 255] },
+  transcribing: { label: "hearing", bn: "বুঝছি", color: [155, 123, 255] },
+  thinking: { label: "thinking", bn: "ভাবছি", color: [155, 123, 255] },
+  acting: { label: "working", bn: "করছি", color: [255, 181, 71] },
+  speaking: { label: "speaking", bn: "বলছি", color: [255, 79, 216] },
+  error: { label: "error", bn: "সমস্যা", color: [255, 92, 122] },
+};
+const core = { state: "idle", level: 0, target: 0, color: [46, 230, 255], blink: 0, nextBlink: 2,
+  look: 0, lookTarget: 0, t: 0, last: 0 };
+const ctx = $("core").getContext("2d");
+const W = 440, C = W / 2;
+const particles = Array.from({ length: 44 }, () => ({ a: Math.random() * Math.PI * 2,
+  r: 118 + Math.random() * 90, s: 0.12 + Math.random() * 0.35, z: Math.random() }));
+const mix = (a, b, k) => a.map((v, i) => v + (b[i] - v) * k);
+const rgba = (c, a) => `rgba(${c[0] | 0},${c[1] | 0},${c[2] | 0},${a})`;
+
+function frame(now) {
+  const dt = Math.min(0.05, core.last ? (now - core.last) / 1000 : 0.016); core.last = now; core.t += dt;
+  if (document.hidden) { requestAnimationFrame(frame); return; }
+  const st = STATES[core.state] || STATES.idle;
+  core.color = mix(core.color, st.color, 0.08);
+  core.level += (core.target - core.level) * 0.25; core.target *= 0.9;
+  const busy = ["thinking", "transcribing", "acting"].includes(core.state);
+  const speak = core.state === "speaking", listen = core.state === "listening";
+  const t = core.t, col = core.color;
+  ctx.clearRect(0, 0, W, W);
+  const breathe = 1 + Math.sin(t * 1.6) * 0.025 + core.level * 0.3 + (speak ? Math.abs(Math.sin(t * 9)) * 0.03 : 0);
+
+  const glow = ctx.createRadialGradient(C, C, 40, C, C, 215);
+  glow.addColorStop(0, rgba(col, 0.42)); glow.addColorStop(0.5, rgba(col, 0.12)); glow.addColorStop(1, rgba(col, 0));
+  ctx.fillStyle = glow; ctx.fillRect(0, 0, W, W);
+
+  for (const p of particles) {  // orbiting sparks
+    p.a += p.s * dt * (busy ? 3 : 1);
+    const r = p.r * (listen ? 1 + core.level * 0.5 : 1);
+    ctx.fillStyle = rgba(col, 0.35 + p.z * 0.6);
+    ctx.beginPath(); ctx.arc(C + Math.cos(p.a) * r, C + Math.sin(p.a) * r * 0.92, 1.4 + p.z * 2, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.lineCap = "round";
+  [[146, 0.6, 0.9, 1.6], [124, -0.9, 0.55, 2.5], [168, 0.35, 0.3, 1.2]].forEach(([r, speed, arc, w], i) => {
+    const spin = t * speed * (busy ? 3.2 : 1) + i;
+    ctx.strokeStyle = rgba(col, 0.85 - i * 0.18); ctx.lineWidth = w * 1.5;
+    for (let k = 0; k < 3; k++) {
+      const a0 = spin + k * (Math.PI * 2 / 3);
+      ctx.beginPath(); ctx.arc(C, C, r * breathe, a0, a0 + arc * 1.4); ctx.stroke();
+    }
+  });
+  ctx.strokeStyle = rgba(col, 0.38); ctx.lineWidth = 1.4;  // HUD ticks
+  for (let k = 0; k < 60; k++) {
+    const a = k / 60 * Math.PI * 2 + t * 0.05, r1 = 186, r2 = k % 5 ? 191 : 197;
+    ctx.beginPath(); ctx.moveTo(C + Math.cos(a) * r1, C + Math.sin(a) * r1); ctx.lineTo(C + Math.cos(a) * r2, C + Math.sin(a) * r2); ctx.stroke();
+  }
+
+  const R = 94 * breathe;  // face
+  const face = ctx.createRadialGradient(C - 28, C - 34, 10, C, C, R);
+  face.addColorStop(0, "rgba(255,255,255,0.32)"); face.addColorStop(0.35, rgba(col, 0.45)); face.addColorStop(1, "rgba(8,14,34,0.9)");
+  ctx.fillStyle = face; ctx.beginPath(); ctx.arc(C, C, R, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = rgba(col, 0.8); ctx.lineWidth = 2; ctx.shadowColor = rgba(col, 0.9); ctx.shadowBlur = 18;
+  ctx.beginPath(); ctx.arc(C, C, R, 0, Math.PI * 2); ctx.stroke(); ctx.shadowBlur = 0;
+
+  core.nextBlink -= dt;  // eyes: blink, look around while thinking, wide while listening
+  if (core.nextBlink <= 0) { core.blink = 1; core.nextBlink = 2.5 + Math.random() * 3.5; }
+  core.blink = Math.max(0, core.blink - dt * 7);
+  const open = 1 - Math.sin(core.blink * Math.PI);
+  if (busy) core.lookTarget = Math.sin(t * 2.2) * 12; else if (Math.random() < 0.004) core.lookTarget = (Math.random() - 0.5) * 14;
+  core.look += (core.lookTarget - core.look) * 0.08;
+  const eyeH = (listen ? 27 : 22) * open + 2, eyeW = listen ? 15 : 13, ey = C - 12;
+  ctx.fillStyle = "rgba(235,250,255,0.96)"; ctx.shadowColor = rgba(col, 1); ctx.shadowBlur = 16;
+  for (const side of [-1, 1]) { ctx.beginPath(); ctx.ellipse(C + side * 34 + core.look, ey, eyeW, eyeH, 0, 0, Math.PI * 2); ctx.fill(); }
+  ctx.shadowBlur = 0;
+  if (open > 0.6) {  // anime sparkle
+    for (const side of [-1, 1]) {
+      const ex = C + side * 34 + core.look;
+      ctx.fillStyle = rgba(col, 0.9); ctx.beginPath(); ctx.arc(ex + 4, ey + 6, 4.5, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "white"; ctx.beginPath(); ctx.arc(ex - 4, ey - 8, 3.2, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+  ctx.fillStyle = "rgba(255,79,216,0.18)";  // blush
+  for (const side of [-1, 1]) { ctx.beginPath(); ctx.ellipse(C + side * 56, C + 18, 13, 6, 0, 0, Math.PI * 2); ctx.fill(); }
+  ctx.strokeStyle = "rgba(235,250,255,0.9)"; ctx.lineWidth = 3;  // mouth
+  ctx.beginPath();
+  if (speak) {
+    for (let x = -22; x <= 22; x += 2) {
+      const y = C + 30 + Math.sin(x * 0.45 + t * 18) * 5 * Math.abs(Math.sin(t * 6 + x));
+      x === -22 ? ctx.moveTo(C + x, y) : ctx.lineTo(C + x, y);
+    }
+  } else if (busy) ctx.arc(C, C + 32, 5, 0, Math.PI * 2);
+  else ctx.arc(C, C + 22, 13, 0.2 * Math.PI, 0.8 * Math.PI);
+  ctx.stroke();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+// ---------- conversation ----------
+const TOOL_LABELS = {
+  open_app: "opened", close_app: "closed", open_website: "website", web_search: "search",
+  play_youtube: "YouTube", media: "media", volume: "volume", current_time: "time", weather: "weather",
+  set_reminder: "reminder", take_screenshot: "screenshot", lock_screen: "locked", power: "power",
+  type_text: "typed", press_keys: "keys", window_action: "window", open_path: "opened",
+  find_files: "files", system_status: "system", wikipedia_summary: "Wikipedia", web_lookup: "web",
+  github_overview: "GitHub", open_settings: "settings", take_note: "note",
+};
+let actsBox = null;
 function add(cls, text, meta) {
-  $("empty")?.remove();
+  $("hello")?.remove(); actsBox = null;
   const el = document.createElement("div");
-  el.className = cls;
-  el.textContent = text;
+  el.className = cls; el.textContent = text;
   if (meta) { const m = document.createElement("span"); m.className = "meta"; m.textContent = meta; el.append(m); }
-  log.append(el);
-  log.scrollTop = log.scrollHeight;
+  log.append(el); log.scrollTop = log.scrollHeight;
+  $("stage").classList.toggle("compact", log.children.length > 2);
   return el;
 }
-
-function setState(state) {
-  const pill = $("state");
-  pill.textContent = STATES[state] || state;
-  pill.className = "pill " + state;
-  $("mic").classList.toggle("on", state === "listening");
-  if (state !== "listening") $("mic").style.boxShadow = "";
+function addAction(name, args, result) {
+  $("hello")?.remove();
+  if (!actsBox) { actsBox = document.createElement("div"); actsBox.className = "acts"; log.append(actsBox); }
+  const res = String(result), el = document.createElement("span");
+  el.className = "act" + (res.startsWith("error") ? " err" : res.startsWith("cancelled") ? " cancel" : "");
+  const detail = Object.entries(args || {}).filter(([k, v]) => k !== "language" && typeof v !== "object")
+    .map(([, v]) => v).slice(0, 2).join(" · ");
+  el.textContent = (res.startsWith("error") ? "✕ " : res.startsWith("cancelled") ? "⏸ " : "✓ ") +
+    (TOOL_LABELS[name] || name.replace("computer.", "screen · ")) + (detail ? " · " + detail : "");
+  el.title = `${name}(${JSON.stringify(args)})\n→ ${res}`;
+  actsBox.append(el); log.scrollTop = log.scrollHeight;
 }
+function setState(state) {
+  core.state = STATES[state] ? state : "idle";
+  const st = STATES[core.state];
+  $("state").textContent = `${st.bn} · ${st.label}`;
+  document.documentElement.style.setProperty("--accent", rgba(st.color, 1));
+  $("mic").classList.toggle("on", state === "listening");
+}
+function caption(text, live) { const c = $("caption"); c.textContent = text; c.classList.toggle("live", !!live); }
 
 const seen = new Set();
 function handle(ev) {
-  const key = ev.type + ev.time;
-  if (ev.time && seen.has(key)) return;
-  if (ev.time) seen.add(key);
+  if (ev.time) { const key = ev.type + ev.time; if (seen.has(key)) return; seen.add(key); }
   switch (ev.type) {
-    case "state": setState(ev.state); break;
+    case "state":
+      setState(ev.state);
+      if (ev.state === "listening") caption("শুনছি… বলুন", true);
+      else if (ev.state === "transcribing") caption("বুঝছি…", true);
+      else if (ev.state === "thinking") caption("ভাবছি…", true);
+      else if (ev.state === "idle") caption("");
+      break;
     case "heard": add("msg user", ev.text, (ev.language === "bn" ? "বাংলা" : "English") + (ev.source === "voice" ? " · 🎙" : "")); break;
-    case "transcript": if (!ev.text) add("error", "কিছু শোনা যায়নি · nothing heard"); break;
-    case "reply": add("msg bot", ev.text); break;
-    case "partial": add("msg bot", ev.text, "…"); break;
-    case "tool": add("tool" + (String(ev.result).startsWith("error") ? " err" : ""),
-                     `${ev.name}(${JSON.stringify(ev.args)}) → ${ev.result}`); break;
-    case "route": if (ev.seconds !== undefined) add("tool", `${ev.fast ? "fast path" : "model"} · ${ev.steps ?? 1} step(s) · ${ev.seconds}s`); break;
+    case "transcript": if (!ev.text) add("notice", "কিছু শোনা যায়নি · nothing heard"); break;
+    case "reply": add("msg bot", ev.text); caption(""); break;
+    case "partial": caption(ev.text, true); break;
+    case "tool": addAction(ev.name, ev.args, ev.result); break;
+    case "route": {
+      const last = log.lastElementChild;
+      if (last && last.classList.contains("bot") && !last.querySelector(".meta")) {
+        const m = document.createElement("span"); m.className = "meta";
+        m.textContent = [ev.fast ? "instant" : ev.decider, ev.seconds !== undefined ? `${ev.seconds}s` : ""].filter(Boolean).join(" · ");
+        if (m.textContent) last.append(m);
+      }
+      break;
+    }
     case "confirm": $("confirm-q").textContent = ev.prompt; $("confirm").classList.add("show"); break;
     case "confirm_done": $("confirm").classList.remove("show"); break;
-    case "error": add("error", ev.message); break;
-    case "level": if ($("mic").classList.contains("on"))
-      $("mic").style.boxShadow = `0 0 0 ${Math.min(16, 2 + ev.value * 400).toFixed(1)}px rgba(220,38,38,.35)`;
-      break;
+    case "error": add("notice", ev.message); core.state = "error"; setTimeout(() => setState("idle"), 900); break;
+    case "level": core.target = Math.min(1, ev.value * 18); break;
     case "ready": info.stt = ev.stt; showInfo(); break;
   }
 }
 
 async function post(path, body) {
-  const res = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
+  const res = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" },
+    body: body ? JSON.stringify(body) : undefined });
   return res.json();
 }
 function send(text) { text = text.trim(); if (text) post("/api/command", { text }); }
-
-$("text").addEventListener("keydown", (e) => {
-  if (e.key === "Enter") { send(e.target.value); e.target.value = ""; }
-});
+$("text").addEventListener("keydown", (e) => { if (e.key === "Enter") { send(e.target.value); e.target.value = ""; } });
+$("send").onclick = () => { send($("text").value); $("text").value = ""; };
 $("mic").onclick = () => post("/api/listen");
-$("stop").onclick = () => post("/api/stop");
 $("yes").onclick = () => post("/api/confirm", { answer: true });
 $("no").onclick = () => post("/api/confirm", { answer: false });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") post("/api/stop"); });
+$("theme").onclick = () => {
+  const light = document.documentElement.dataset.theme !== "light";
+  document.documentElement.dataset.theme = light ? "light" : "dark";
+  try { localStorage.setItem("sohayok-theme", light ? "light" : "dark"); } catch {}
+};
+try { const saved = localStorage.getItem("sohayok-theme"); if (saved) document.documentElement.dataset.theme = saved; } catch {}
 
 const info = {};
 function showInfo() {
-  $("backend").textContent = [info.backend, info.model, info.stt, info.wake].filter(Boolean).join(" · ");
+  $("backend").textContent = [info.backend, info.model, info.stt, info.wake].filter(Boolean).join("  ·  ").toUpperCase();
 }
-
 function connect() {
   const ws = new WebSocket(`ws://${location.host}/ws`);
   ws.onmessage = (msg) => {
@@ -206,11 +364,11 @@ function connect() {
     if (ev.type === "hello") {
       Object.assign(info, { backend: ev.backend, model: ev.model, stt: ev.stt, wake: ev.wake });
       showInfo();
-      for (const old of ev.history || []) handle(old);
+      for (const old of ev.history || []) if (old.type !== "state" && old.type !== "level") handle(old);
       setState(ev.state);
     } else handle(ev);
   };
-  ws.onclose = () => { $("backend").textContent = "reconnecting…"; setTimeout(connect, 1500); };
+  ws.onclose = () => { $("backend").textContent = "RECONNECTING…"; setTimeout(connect, 1200); };
 }
 connect();
 </script>
