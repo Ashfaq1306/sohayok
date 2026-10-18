@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import ctypes
 import logging
 import os
 import socket
 import threading
 import time
+from collections.abc import Callable
 from typing import Any
 
 from sohayok import winapi
@@ -140,34 +142,73 @@ def load_speech(assistant: Assistant, config: Config, info: dict[str, str]) -> N
         assistant.emit("error", message=f"speech recognition unavailable: {exc}")
 
 
-def start_hotkey(assistant: Assistant, combo: str) -> Any:
+def start_hotkey(combo: str, activate: Callable[[], None]) -> Any:
     from pynput import keyboard
 
-    def pressed() -> None:
-        threading.Thread(target=assistant.listen_once, name="listen", daemon=True).start()
-
-    listener = keyboard.GlobalHotKeys({combo: pressed})
+    listener = keyboard.GlobalHotKeys({combo: activate})
     listener.daemon = True
     listener.start()
     return listener
 
 
-def start_wake_word(assistant: Assistant, config: Config) -> None:
-    from sohayok.wake import WakeWordListener
+WAKE_NAMES = (
+    "tammy",
+    "tami",
+    "tamy",
+    "tammi",
+    "tommy",
+    "tummy",
+    "টামি",
+    "ট্যামি",
+    "তামি",
+    "টেমি",
+    "টমি",
+    "ট্যামী",
+    "ট্যামিই",
+)
 
+
+def heard_wake_name(text: str) -> bool:
+    """Whisper's spelling of the wake word varies; accept close spellings in either script."""
+    from rapidfuzz import fuzz
+
+    from sohayok.lang import normalize, strip_punctuation
+
+    words = strip_punctuation(normalize(text)).split()[:4]
+    return any(fuzz.ratio(word, name) >= 75 for word in words for name in WAKE_NAMES)
+
+
+def start_wake_word(assistant: Assistant, config: Config, activate: Callable[[], None]) -> str:
+    """Listen for the wake word; returns how to say it (shown in the window)."""
+    from sohayok.wake import WakeWordListener, resolve_wake_model
+
+    model, name = resolve_wake_model(config.activation.wake_model)
     listener = WakeWordListener(
-        config.activation.wake_model,
-        config.activation.wake_threshold,
-        config.speech.input_device or None,
+        model, config.activation.wake_threshold, config.speech.input_device or None
     )
-    listener.on_wake = lambda: assistant.listen_once() if assistant.state == "idle" else None
-    listener.paused = lambda: assistant.state != "idle"
+
+    def confirm(audio) -> bool:
+        # A second opinion from Whisper keeps random sounds from waking the assistant.
+        transcriber = assistant.transcriber
+        if not config.activation.wake_confirm or transcriber is None:
+            return True
+        text = transcriber.multi.transcribe(audio, "en")
+        accepted = heard_wake_name(text)
+        log.info("wake check heard %r: %s", text, "yes" if accepted else "no")
+        return accepted
+
+    listener.confirm = confirm
+    listener.on_wake = lambda: activate() if assistant.state == "idle" else None
+    listener.paused = lambda: assistant.state not in {"idle"}
     threading.Thread(target=listener.run, name="wake-word", daemon=True).start()
+    return f'say "{name}"'
 
 
 def run(config: Config, show_window: bool = True, greet: bool = True) -> None:
+    import httpx
     import uvicorn
 
+    from sohayok.popup import DesktopShell
     from sohayok.server import create_app
     from sohayok.tools import load_all
     from sohayok.tools.timers import SCHEDULER
@@ -176,12 +217,18 @@ def run(config: Config, show_window: bool = True, greet: bool = True) -> None:
     host, port = config.server.host, config.server.port
     url = f"http://{host}:{port}/"
     if port_in_use(host, port):
-        log.info("Sohayok is already running; opening its window")
-        if show_window:
-            _window(url)
+        log.info("Sohayok is already running; showing it")
+        try:
+            httpx.post(f"{url}api/show", timeout=3)
+        except httpx.HTTPError:
+            pass
         return
 
     winapi.make_dpi_aware()
+    try:  # group under Sohayok's own taskbar identity and icon, not "Python"
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("Sohayok.Assistant")
+    except (AttributeError, OSError):
+        pass
     registry = load_all()
     tracker = ForegroundTracker()
     brain, info = build_brain(config)
@@ -197,22 +244,38 @@ def run(config: Config, show_window: bool = True, greet: bool = True) -> None:
     from sohayok.audio import chime
 
     assistant.chime = chime
-
     SCHEDULER.load(app_dir() / "reminders.json")
-    SCHEDULER.on_fire = lambda r: assistant.reply(r.text, detect_language(r.text, "bn"))
+
+    shell = DesktopShell(url, on_listen=lambda: None, on_quit=lambda: None)
+
+    def announce(reminder) -> None:
+        if show_window:
+            shell.show()
+        assistant.reply(reminder.text, detect_language(reminder.text, "bn"))
+
+    SCHEDULER.on_fire = announce
     SCHEDULER.start()
 
-    app = create_app(assistant, info)
+    def activate() -> None:
+        """Wake word, hotkey, or tray: show the window and listen."""
+        if show_window:
+            shell.show()
+        threading.Thread(target=assistant.listen_once, name="listen", daemon=True).start()
+
+    shell.on_listen = activate
+    app = create_app(
+        assistant, info, controls={"show": shell.show if show_window else lambda: None}
+    )
     server = uvicorn.Server(uvicorn.Config(app, host=host, port=port, log_level="warning"))
+    shell.on_quit = lambda: setattr(server, "should_exit", True)
     threading.Thread(target=server.run, name="server", daemon=True).start()
     threading.Thread(
         target=load_speech, args=(assistant, config, info), name="load-speech", daemon=True
     ).start()
-    start_hotkey(assistant, config.activation.hotkey)
+    start_hotkey(config.activation.hotkey, activate)
     if config.activation.wake_word:
         try:
-            start_wake_word(assistant, config)
-            info["wake"] = 'say "hey jarvis"'
+            info["wake"] = start_wake_word(assistant, config, activate)
         except Exception as exc:  # e.g. the optional openwakeword package is missing
             log.warning("wake word unavailable (%s); use the hotkey", exc)
     while not port_in_use(host, port):
@@ -220,7 +283,7 @@ def run(config: Config, show_window: bool = True, greet: bool = True) -> None:
     assistant.start(greet=greet)
     log.info("Sohayok is running at %s (hotkey %s)", url, config.activation.hotkey)
     if show_window:
-        _window(url)
+        shell.run(start_hidden=not greet)
         server.should_exit = True
     else:
         try:
@@ -228,10 +291,3 @@ def run(config: Config, show_window: bool = True, greet: bool = True) -> None:
                 time.sleep(3600)
         except KeyboardInterrupt:
             server.should_exit = True
-
-
-def _window(url: str) -> None:
-    import webview
-
-    webview.create_window(WINDOW_TITLE, url, width=440, height=720, min_size=(360, 480))
-    webview.start()

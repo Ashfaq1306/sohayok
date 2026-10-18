@@ -302,6 +302,21 @@ def _close(m, text):
     return Intent("close_app", {"name": app}, {"bn": f"{app} বন্ধ করছি।", "en": f"Closing {app}."})
 
 
+WAKE_PREFIX = re.compile(
+    unicodedata.normalize(
+        "NFC",
+        r"^(?:hey |hi |ok |okay |হেই |এই )?(?:tammy|tami|tammi|tommy|sohayok|jarvis|টামি|ট্যামি|তামি"
+        r"|সহায়ক|জার্ভিস)(?![a-zঀ-৿])[\s,.!।?]*",
+    ),
+    re.IGNORECASE,
+)
+
+
+def strip_wake_name(text: str) -> str:
+    """Remove a leading "Tammy," / "হেই টামি" so the rest is the command."""
+    return WAKE_PREFIX.sub("", text.strip(), count=1).strip()
+
+
 def _compound(target: str) -> bool:
     """True for multi-step requests ("chrome and search cats"), which need the model."""
     return len(target.split()) > 4 or bool(
@@ -312,7 +327,7 @@ def _compound(target: str) -> bool:
 def route(text: str) -> Intent | None:
     """Return an Intent if the whole command matches a fast-path rule."""
     cleaned = normalize(text).strip(" ,")
-    cleaned = re.sub(r"^(?:hey |ok |okay )?(?:sohayok|jarvis|সহায়ক|জার্ভিস)[, ]+", "", cleaned)
+    cleaned = strip_wake_name(cleaned)
     cleaned = re.sub(r"^(?:please|plz|প্লিজ|একটু)\s+", "", cleaned)
     if not cleaned or len(cleaned) > 80:
         return None

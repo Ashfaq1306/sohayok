@@ -50,6 +50,11 @@
   .icon-btn { border: 1px solid var(--line); background: var(--glass); color: var(--muted); width: 30px; height: 30px;
     border-radius: 9px; cursor: pointer; display: grid; place-items: center; font-size: 14px; }
   .icon-btn:hover { color: var(--text); border-color: color-mix(in srgb, var(--accent) 50%, transparent); }
+  .desktop-only { display: none; }
+  body.desktop .desktop-only { display: grid; }
+  .icon-btn.active { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 60%, transparent); }
+  header.pywebview-drag-region { cursor: default; user-select: none; }
+  body.desktop { border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent); }
   .sub { padding: 0 16px; color: var(--dim); font-size: 10.5px; letter-spacing: .08em; white-space: nowrap;
     overflow: hidden; text-overflow: ellipsis; }
 
@@ -121,17 +126,19 @@
 </style>
 </head>
 <body>
-<header>
+<header class="pywebview-drag-region">
   <div class="brand"><b>SOHAYOK</b><span>সহায়ক</span></div>
   <div class="hud">
     <span class="chip-state" id="state">প্রস্তুত · ready</span>
     <button class="icon-btn" id="theme" title="Light / dark" aria-label="Toggle theme">◐</button>
+    <button class="icon-btn desktop-only" id="pin" title="Keep open" aria-label="Keep open">📌</button>
+    <button class="icon-btn desktop-only" id="close" title="Hide (Sohayok keeps listening)" aria-label="Hide">✕</button>
   </div>
 </header>
 <div class="sub" id="backend">CONNECTING…</div>
 <section class="stage" id="stage">
   <canvas id="core" width="440" height="440" aria-label="Sohayok"></canvas>
-  <div class="caption" id="caption">“Hey Jarvis” বলুন বা Ctrl + Alt + Space চাপুন</div>
+  <div class="caption" id="caption">“Tammy” বলুন বা Ctrl + Alt + Space চাপুন</div>
 </section>
 <main id="log">
   <div class="hello" id="hello">আমি সহায়ক। বাংলা বা ইংরেজিতে বলুন, আমি আপনার কম্পিউটার চালাব।<br>
@@ -292,7 +299,29 @@ function addAction(name, args, result) {
   el.title = `${name}(${JSON.stringify(args)})\n→ ${res}`;
   actsBox.append(el); log.scrollTop = log.scrollHeight;
 }
+// ---------- desktop pop-up: hide itself when the conversation is over ----------
+let desktop = false, pinned = false, hideTimer = null, hovering = false;
+function scheduleHide() {
+  clearTimeout(hideTimer);
+  if (!desktop || pinned) return;
+  hideTimer = setTimeout(() => {
+    const typing = document.activeElement === $("text") && $("text").value;
+    if (core.state === "idle" && !hovering && !typing && !$("confirm").classList.contains("show")) {
+      window.pywebview.api.hide();
+    } else scheduleHide();
+  }, 12000);
+}
+document.addEventListener("mouseenter", () => { hovering = true; });
+document.addEventListener("mouseleave", () => { hovering = false; });
+window.addEventListener("pywebviewready", () => {
+  desktop = true; document.body.classList.add("desktop");
+  $("close").onclick = () => window.pywebview.api.hide();
+  $("pin").onclick = () => { pinned = !pinned; $("pin").classList.toggle("active", pinned); if (!pinned) scheduleHide(); };
+});
+window.sohayokShown = () => { clearTimeout(hideTimer); log.scrollTop = log.scrollHeight; scheduleHide(); };
+
 function setState(state) {
+  if (state !== "idle") clearTimeout(hideTimer);
   core.state = STATES[state] ? state : "idle";
   const st = STATES[core.state];
   $("state").textContent = `${st.bn} · ${st.label}`;
@@ -314,7 +343,7 @@ function handle(ev) {
       break;
     case "heard": add("msg user", ev.text, (ev.language === "bn" ? "বাংলা" : "English") + (ev.source === "voice" ? " · 🎙" : "")); break;
     case "transcript": if (!ev.text) add("notice", "কিছু শোনা যায়নি · nothing heard"); break;
-    case "reply": add("msg bot", ev.text); caption(""); break;
+    case "reply": add("msg bot", ev.text); caption(""); scheduleHide(); break;
     case "partial": caption(ev.text, true); break;
     case "tool": addAction(ev.name, ev.args, ev.result); break;
     case "route": {

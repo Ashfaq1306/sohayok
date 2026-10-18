@@ -53,7 +53,10 @@ class SpeechConfig:
     # Languages the detector may choose between.
     languages: list[str] = field(default_factory=lambda: ["bn", "en"])
     input_device: str = ""  # sounddevice name or index; "" = Windows default microphone
-    silence_seconds: float = 0.9
+    silence_seconds: float = 1.0
+    # Keep the last N voice commands (audio + transcript) in %APPDATA%\Sohayok\recordings,
+    # on this PC only, to check recognition later. 0 turns it off.
+    keep_recordings: int = 20
     max_record_seconds: float = 20.0
 
 
@@ -68,11 +71,14 @@ class VoiceConfig:
 @dataclass
 class ActivationConfig:
     hotkey: str = "<ctrl>+<alt>+<space>"
-    # Listen continuously (on this PC only) for the wake word "hey jarvis" as well as the
-    # hotkey. Needs the "wake" extra; without it only the hotkey works.
+    # Listen continuously (on this PC only) for the wake word as well as the hotkey.
+    # Needs the "wake" extra; without it only the hotkey works.
     wake_word: bool = True
-    wake_model: str = "hey_jarvis"
+    # "tammy" (Sohayok's own model), "hey_jarvis", or a path to an openWakeWord .onnx model.
+    wake_model: str = "tammy"
     wake_threshold: float = 0.5
+    # Double-check each wake with Whisper before waking (fewer false wake-ups).
+    wake_confirm: bool = True
 
 
 @dataclass

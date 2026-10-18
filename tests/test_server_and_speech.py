@@ -148,3 +148,26 @@ def test_choose_language_treats_indic_guesses_as_bangla():
     assert choose_language({"en": 0.93, "bn": 0.01}, ["bn", "en"]) == ("en", 0.93)
     assert choose_language({"en": 0.2, "fr": 0.7, "de": 0.1}, ["fr", "de"])[0] == "fr"
     assert choose_language({}, ["bn", "en"])[0] == "bn"
+
+
+def test_quiet_audio_is_brought_up_and_recordings_are_pruned(tmp_path):
+    from sohayok.audio import normalize_level, save_recording
+
+    quiet = (np.sin(np.linspace(0, 200, 16_000)) * 0.05).astype(np.float32)
+    louder = normalize_level(quiet)
+    assert 0.45 < float(np.abs(louder).max()) <= 1.0
+    assert normalize_level(np.zeros(100, dtype=np.float32)).max() == 0
+    for i in range(5):
+        save_recording(tmp_path, quiet, {"text": f"t{i}"}, keep=3)
+    assert len(list(tmp_path.glob("*.wav"))) == 3 and len(list(tmp_path.glob("*.json"))) == 3
+
+
+def test_wake_name_handling():
+    from sohayok.desktop import heard_wake_name
+    from sohayok.router import strip_wake_name
+
+    assert strip_wake_name("Tammy, open chrome") == "open chrome"
+    assert strip_wake_name("টামি ক্রোম খোলো") == "ক্রোম খোলো"
+    assert strip_wake_name("Tamil movies") == "Tamil movies"
+    assert heard_wake_name("Tammy.") and heard_wake_name("Hey Tommy") and heard_wake_name("ট্যামি")
+    assert not heard_wake_name("open the window") and not heard_wake_name("আমি ভালো আছি")

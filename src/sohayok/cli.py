@@ -251,8 +251,33 @@ def cmd_config(_: argparse.Namespace) -> None:
     subprocess.Popen(["notepad.exe", str(path)])
 
 
-def _startup_shortcut() -> Path:
-    return Path.home() / "AppData/Roaming/Microsoft/Windows/Start Menu/Programs/Startup/Sohayok.lnk"
+PROGRAMS = Path.home() / "AppData/Roaming/Microsoft/Windows/Start Menu/Programs"
+
+
+def shortcut_paths() -> dict[str, Path]:
+    desktop = Path.home() / "Desktop"
+    onedrive = Path.home() / "OneDrive" / "Desktop"
+    return {
+        "startup": PROGRAMS / "Startup" / "Sohayok.lnk",
+        "start menu": PROGRAMS / "Sohayok.lnk",
+        "desktop": (desktop if desktop.exists() or not onedrive.exists() else onedrive)
+        / "Sohayok.lnk",
+    }
+
+
+def write_shortcut(path: Path, arguments: str) -> None:
+    import win32com.client
+
+    from sohayok.icon import write_icons
+
+    icon, _ = write_icons(config_module.app_dir())
+    link = win32com.client.Dispatch("WScript.Shell").CreateShortcut(str(path))
+    link.TargetPath = str(Path(sys.executable).with_name("pythonw.exe"))
+    link.Arguments = arguments
+    link.WorkingDirectory = str(Path.home())
+    link.Description = "Sohayok voice assistant — say “Tammy”"
+    link.IconLocation = f"{icon},0"
+    link.Save()
 
 
 def cmd_setup(args: argparse.Namespace) -> None:
@@ -273,23 +298,20 @@ def cmd_setup(args: argparse.Namespace) -> None:
         print("Ollama is not installed: winget install Ollama.Ollama")
 
 
-def cmd_startup(args: argparse.Namespace) -> None:
-    """Start Sohayok when you sign in to Windows (or stop doing so)."""
-    shortcut = _startup_shortcut()
+def cmd_install(args: argparse.Namespace) -> None:
+    """Run in the background from every sign-in, and add Start menu and Desktop shortcuts."""
+    paths = shortcut_paths()
     if args.remove:
-        shortcut.unlink(missing_ok=True)
-        print(f"removed {shortcut}")
+        for path in paths.values():
+            path.unlink(missing_ok=True)
+            print(f"removed {path}")
         return
-    import win32com.client
-
-    exe = Path(sys.executable).with_name("pythonw.exe")
-    link = win32com.client.Dispatch("WScript.Shell").CreateShortcut(str(shortcut))
-    link.TargetPath = str(exe)
-    link.Arguments = "-m sohayok run --quiet"
-    link.WorkingDirectory = str(Path.home())
-    link.Description = "Sohayok voice assistant"
-    link.Save()
-    print(f"created {shortcut}")
+    write_shortcut(paths["startup"], "-m sohayok run --quiet")  # silent, in the tray
+    write_shortcut(paths["start menu"], "-m sohayok run")
+    write_shortcut(paths["desktop"], "-m sohayok run")
+    for name, path in paths.items():
+        print(f"{name}: {path}")
+    print("Sohayok now starts with Windows and waits in the tray. Say “Tammy” to call it.")
 
 
 def _ensure_streams() -> None:
@@ -335,9 +357,9 @@ def main(argv: list[str] | None = None) -> None:
     setup.add_argument("--force", action="store_true", help="rebuild the Bangla model")
     setup.set_defaults(func=cmd_setup)
     sub.add_parser("config", help="open the settings file").set_defaults(func=cmd_config)
-    startup = sub.add_parser("startup", help="start with Windows")
-    startup.add_argument("--remove", action="store_true")
-    startup.set_defaults(func=cmd_startup)
+    install = sub.add_parser("install", help="start with Windows; add Start menu/Desktop shortcuts")
+    install.add_argument("--remove", action="store_true", help="remove the shortcuts")
+    install.set_defaults(func=cmd_install)
 
     args = parser.parse_args(argv)
     _setup_logging(args.verbose)

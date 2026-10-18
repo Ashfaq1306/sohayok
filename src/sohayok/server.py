@@ -52,7 +52,11 @@ def _offer(client: asyncio.Queue, event: dict[str, Any]) -> None:
     client.put_nowait(event)
 
 
-def create_app(assistant: Assistant, info: dict[str, Any] | None = None) -> FastAPI:
+def create_app(
+    assistant: Assistant,
+    info: dict[str, Any] | None = None,
+    controls: dict[str, Any] | None = None,
+) -> FastAPI:
     app = FastAPI(title="Sohayok", docs_url=None, redoc_url=None)
     hub = EventHub()
     assistant.listeners.append(hub.publish)
@@ -83,6 +87,15 @@ def create_app(assistant: Assistant, info: dict[str, Any] | None = None) -> Fast
     def listen() -> dict[str, str]:
         threading.Thread(target=assistant.listen_once, name="listen", daemon=True).start()
         return {"status": "listening"}
+
+    controls = controls or {}
+
+    @app.post("/api/show")
+    def show() -> dict[str, str]:
+        """A second launch of Sohayok calls this instead of starting another copy."""
+        if "show" in controls:
+            controls["show"]()
+        return {"status": "shown" if "show" in controls else "no window"}
 
     @app.post("/api/stop")
     def stop() -> dict[str, str]:

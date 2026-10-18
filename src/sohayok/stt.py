@@ -200,8 +200,10 @@ class Transcriber:
         self.names = {"multi": whisper_model, "bangla": bangla_model or whisper_model}
 
     def transcribe(self, audio: np.ndarray, language: str | None = None) -> Transcript:
+        from sohayok.audio import normalize_level
+
         started = time.monotonic()
-        audio = audio.astype(np.float32)
+        audio = normalize_level(audio.astype(np.float32))
         probability = 1.0
         if language is None:
             language, probability = self.multi.detect(audio, self.languages)

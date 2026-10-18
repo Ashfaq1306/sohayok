@@ -13,7 +13,7 @@ from typing import Any
 from sohayok.brain.base import Brain
 from sohayok.config import Config
 from sohayok.lang import detect_language, normalize
-from sohayok.router import route
+from sohayok.router import route, strip_wake_name
 from sohayok.safety import ConfirmationBroker, Executor, Pending, parse_answer
 from sohayok.tools.registry import Registry
 
@@ -42,6 +42,7 @@ GREETING = {
     "bn": "আসসালামু আলাইকুম! আমি সহায়ক। কী করতে পারি?",
     "en": "Hi, I'm Sohayok. What can I do for you?",
 }
+AT_YOUR_SERVICE = {"bn": "জি, বলুন।", "en": "Yes?"}
 DONE = {"bn": "হয়ে গেছে।", "en": "Done."}
 FAILED = {"bn": "দুঃখিত, কাজটা করতে পারিনি।", "en": "Sorry, I couldn't do that."}
 NOT_HEARD = {"bn": "শুনতে পাইনি, আবার বলুন।", "en": "I didn't catch that. Please say it again."}
@@ -134,8 +135,14 @@ class Assistant:
 
     def submit(self, text: str, language: str | None = None, source: str = "text") -> None:
         """Queue a command, unless it answers a pending confirmation or interrupts speech."""
-        text = text.strip()
+        original = text.strip()
+        text = strip_wake_name(original)
         if not text:
+            if original:  # only the wake word: answer and listen for the command
+                language = language or self.language
+                self.reply(AT_YOUR_SERVICE.get(language, AT_YOUR_SERVICE["en"]), language)
+                if self.transcriber and self.recorder:
+                    threading.Thread(target=self.listen_once, daemon=True).start()
             return
         if self.broker.pending is not None:
             answer = parse_answer(text)
@@ -188,6 +195,24 @@ class Assistant:
                 return
             self.set_state("transcribing")
             heard = self.transcriber.transcribe(audio)
+            keep = self.config.speech.keep_recordings
+            if keep > 0:
+                try:
+                    from sohayok.audio import save_recording
+                    from sohayok.config import app_dir
+
+                    save_recording(
+                        app_dir() / "recordings",
+                        audio,
+                        {
+                            "text": heard.text,
+                            "language": heard.language,
+                            "confidence": round(heard.language_probability, 3),
+                        },
+                        keep,
+                    )
+                except Exception:
+                    log.exception("could not keep the recording")
             self.emit(
                 "transcript",
                 text=heard.text,

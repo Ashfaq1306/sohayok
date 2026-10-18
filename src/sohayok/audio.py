@@ -44,6 +44,38 @@ class SpeechDetector:
         return float(np.asarray(out).reshape(-1)[0])
 
 
+def normalize_level(
+    audio: np.ndarray, target_peak: float = 0.5, max_gain: float = 20.0
+) -> np.ndarray:
+    """Bring quiet recordings up to a normal level (robust to clicks: uses the 99.5th
+    percentile, not the single loudest sample)."""
+    if audio.size == 0:
+        return audio
+    level = float(np.percentile(np.abs(audio), 99.5))
+    if level < 1e-4:
+        return audio
+    gain = min(max_gain, target_peak / level)
+    return np.clip(audio * gain, -1.0, 1.0).astype(np.float32)
+
+
+def save_recording(folder, audio: np.ndarray, meta: dict, keep: int) -> None:
+    """Store one voice command (16 kHz WAV + JSON) and keep only the newest `keep`."""
+    import json
+    from datetime import datetime
+    from pathlib import Path
+
+    import soundfile as sf
+
+    folder = Path(folder)
+    folder.mkdir(parents=True, exist_ok=True)
+    stem = folder / datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+    sf.write(stem.with_suffix(".wav"), audio, RATE)
+    stem.with_suffix(".json").write_text(json.dumps(meta, ensure_ascii=False, indent=1), "utf-8")
+    for old in sorted(folder.glob("*.wav"))[:-keep]:
+        old.unlink(missing_ok=True)
+        old.with_suffix(".json").unlink(missing_ok=True)
+
+
 def energy_probability(frame: np.ndarray) -> float:
     """Fallback detector: loudness mapped to 0..1 (used if the VAD model cannot load)."""
     rms = float(np.sqrt(np.mean(frame**2)) + 1e-9)
@@ -73,12 +105,18 @@ class Recorder:
             log.exception("Silero VAD unavailable; using a loudness threshold")
             self.detector = None
         self.on_level: Callable[[float], None] = lambda level: None
+        self._gain = 1.0
 
     def stop(self) -> None:
         """End the current recording now (push-to-talk released, or the user clicked stop)."""
         self._stop.set()
 
     def _speech(self, frame: np.ndarray) -> float:
+        # A slowly adapting gain lets quiet microphones trigger the detector like loud ones.
+        rms = float(np.sqrt(np.mean(frame**2))) + 1e-7
+        if rms > 0.002:
+            self._gain += (min(12.0, max(1.0, 0.05 / rms)) - self._gain) * 0.1
+        frame = np.clip(frame * self._gain, -1, 1)
         if self.detector is None:
             return energy_probability(frame)
         return self.detector.probability(frame)
