@@ -1,0 +1,78 @@
+[project]
+name = "sohayok"
+version = "0.1.0"
+description = "Sohayok (সহায়ক): a Bangla and English voice assistant that controls your Windows desktop."
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+license = "Apache-2.0"
+authors = [{ name = "Ashfaq1306", email = "ashfaqur87654@gmail.com" }]
+dependencies = [
+    "anthropic>=1.15.0",
+    "comtypes>=1.4.17",
+    "edge-tts>=7.3.1",
+    "fastapi>=0.143.3",
+    "faster-whisper>=1.2.1",
+    "httpx>=0.28.1",
+    "mss>=10.2.0",
+    "numpy>=2.5.4",
+    "pillow>=13.0.0",
+    "psutil>=7.2.2",
+    "pycaw>=20260927",
+    "pynput>=1.8.2",
+    "pystray>=0.19.5",
+    "pywebview>=6.2.1",
+    "pywin32>=312",
+    "rapidfuzz>=3.14.6",
+    "send2trash>=2.1.0",
+    "sounddevice>=0.5.6",
+    "soundfile>=0.14.0",
+    "torch==2.8.0",
+    "transformers>=5.20.1",
+    "uiautomation>=2.0.29",
+    "uvicorn>=0.54.0",
+    "websockets>=17.2",
+]
+
+[project.scripts]
+sohayok = "sohayok.cli:main"
+
+[project.optional-dependencies]
+wake = [
+    "openwakeword>=0.6.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.13.1,<0.14.0"]
+build-backend = "uv_build"
+
+[tool.uv]
+# Sohayok drives the Windows desktop (Win32, UI Automation, Core Audio).
+environments = ["sys_platform == 'win32'"]
+
+# PyPI's Windows torch wheels are CPU-only; CUDA wheels come from the PyTorch index.
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu128" }]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[dependency-groups]
+bench = [
+    "jiwer>=4.0.0",
+    "pyarrow>=26.0.0",
+]
+dev = [
+    "pytest>=9.1.1",
+    "ruff>=0.17.1",
+]
