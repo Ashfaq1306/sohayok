@@ -96,7 +96,7 @@ def build_brain(config: Config) -> tuple[Any, dict[str, str]]:
             brain_config.ollama_keep_alive,
         )
         brain = LiteBrain(
-            LayaDecider(model, revision),
+            LayaDecider(model, revision, device=brain_config.decider_device),
             brain_config.lite_model,
             brain_config.ollama_url,
             fallback=agent,
