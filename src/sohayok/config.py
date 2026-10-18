@@ -88,7 +88,9 @@ class ActivationConfig:
     # "tammy" (Sohayok's own model), "hey_jarvis", or a path to an openWakeWord .onnx model.
     wake_model: str = "tammy"
     wake_threshold: float = 0.3  # measured operating point for "tammy" with the Whisper check
-    # Double-check each wake with Whisper before waking (fewer false wake-ups).
+    # Scores at or above this wake Sohayok instantly; scores between wake_threshold and this are
+    # double-checked by Whisper first (fewer false wake-ups, a little slower).
+    wake_instant_threshold: float = 0.8
     wake_confirm: bool = True
 
 

@@ -210,6 +210,7 @@ def start_wake_word(assistant: Assistant, config: Config, activate: Callable[...
     listener = WakeWordListener(
         model, config.activation.wake_threshold, config.speech.input_device or None
     )
+    listener.instant_threshold = config.activation.wake_instant_threshold
 
     def confirm(audio) -> bool:
         # A second opinion from Whisper keeps random sounds from waking the assistant.
