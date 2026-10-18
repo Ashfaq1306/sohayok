@@ -214,6 +214,13 @@ def start_hotkey(combo: str, activate: Callable[[], None]) -> Any:
 
 
 WAKE_NAMES = (
+    # How Whisper actually wrote the user's "Tammy" (Bangla-accented): Demi, Damn me, Atatemi.
+    "demi",
+    "demmy",
+    "dammy",
+    "dami",
+    "damme",
+    "temi",
     "tammy",
     "tami",
     "tamy",
@@ -237,7 +244,17 @@ def heard_wake_name(text: str) -> bool:
     from sohayok.lang import normalize, strip_punctuation
 
     words = strip_punctuation(normalize(text)).split()[:4]
-    return any(fuzz.ratio(word, name) >= 75 for word in words for name in WAKE_NAMES)
+    # "Damn me" / "Hey Tammy": also try neighbouring words joined together.
+    words += ["".join(words[i : i + 2]) for i in range(len(words) - 1)]
+    if any(fuzz.ratio(word, name) >= 75 for word in words for name in WAKE_NAMES):
+        return True
+    # "Atatemi" ("hey Tammy" run together): a longer word ending in the name.
+    return any(
+        len(word) > len(name) and word.endswith(name)
+        for word in words
+        for name in WAKE_NAMES
+        if len(name) >= 4
+    )
 
 
 def start_wake_word(assistant: Assistant, config: Config, activate: Callable[..., None]) -> str:
@@ -258,6 +275,19 @@ def start_wake_word(assistant: Assistant, config: Config, activate: Callable[...
         text = transcriber.multi.transcribe(audio, "en")
         accepted = heard_wake_name(text)
         log.info("wake check heard %r: %s", text, "yes" if accepted else "no")
+        keep = config.speech.keep_recordings
+        if keep > 0:  # the user's own wake attempts, for tuning the detector to their voice
+            try:
+                from sohayok.audio import save_recording
+
+                save_recording(
+                    app_dir() / "recordings" / "wake",
+                    audio,
+                    {"whisper": text, "accepted": accepted},
+                    keep * 2,
+                )
+            except Exception:
+                log.debug("could not keep the wake recording", exc_info=True)
         return accepted
 
     listener.confirm = confirm

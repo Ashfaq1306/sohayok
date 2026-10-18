@@ -101,7 +101,7 @@ Bangla script for Bangla requests and in English otherwise.
 | Laya fine-tune + qwen3.5:0.8b | 82.2% | 80.1% | 96.7% | 76.6% | 87.9% | 96.4% | 0.95 |
 | **Laya fine-tune + qwen3.5:2b (default, "lite")** | **91.4%** | **90.4%** | **98.3%** | **90.8%** | **92.1%** | **96.9%** | **2.37** |
 
-The **lite** pipeline asks Laya-Bangla which kind of action is wanted (27 choices, ~15–60 ms),
+The **lite** pipeline asks Laya-Bangla which kind of action is wanted (28 choices, ~15–60 ms on the GPU or ~160 ms on the CPU),
 then gives the small model only that action's one to seven tools; simple successes get a
 built-in Bangla or English reply. It is both lighter (one 2.7 GB model instead of 3.3 GB) and
 far more accurate, mostly on Bangla. Its median time was measured while another training job
@@ -110,7 +110,7 @@ shared the GPU; the 0.8b row also swapped models in and out of GPU memory.
 ### The action decider
 
 Laya-Bangla ([`algolyzer/laya-bangla`](https://huggingface.co/algolyzer/laya-bangla)) was
-fine-tuned to pick one of Sohayok's 27 actions (`sohayok setup --train-decider`, 65 min on the
+fine-tuned to pick one of Sohayok's 28 actions (`sohayok setup --train-decider`, 65 min on the
 RTX 4060, peak 3.2 GB):
 
 - **Training data:** MASSIVE `bn-BD` and `en-US` *train* splits (23,028 real requests) with
@@ -209,6 +209,11 @@ transcribes the last 2 s and the wake is accepted only if it heard the name.
 | … and Whisper confirms (the app wakes) | **93%** |
 | Unseen Bangla speech (1.0 h, FLEURS validation): detector candidates | 18 per hour |
 | … false wake-ups after the Whisper check | **0 per hour** |
+
+**Instant wake.** Waiting for Whisper makes waking feel slow, so the detector's own score is
+trusted when it is high. On the same held-out audio, 97.7% of "Tammy"s scored ≥ 0.8 and no
+frame of the hour of Bangla speech did (≥ 0.7: 2 frames per hour; ≥ 0.5: 15). Sohayok now
+wakes immediately at ≥ 0.8 and asks Whisper only between 0.3 and 0.8.
 
 The three misses were Whisper hearing "Hey Tammy" as "Thank you." or "Page camming." and
 "ট্যামি" as "Can you?". Synthetic voices are cleaner than a real room, so expect somewhat lower

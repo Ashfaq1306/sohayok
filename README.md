@@ -36,7 +36,7 @@ without one it still runs, just slower).
    git clone https://github.com/Ashfaq1306/sohayok.git
    cd sohayok
    uv sync --extra wake
-   uv run sohayok setup                 # downloads the Bangla speech model and the AI model
+   uv run sohayok setup                 # downloads the speech models, the decision model, and the AI model
    ```
 
 3. **Check everything works:**
@@ -61,7 +61,8 @@ That's it. From now on Sohayok starts by itself when you sign in and waits in th
 ## Everyday use
 
 - **Say "Tammy"**, wait for the soft chime, then say what you want. Or say it all at once:
-  "Tammy, ক্রোম খোলো".
+  "Tammy, ক্রোম খোলো". A clear "Tammy" opens the window instantly; an unclear one is
+  double-checked by Whisper first (about half a second).
 - **Or press <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Space</kbd>** and speak, or type in the box.
 - Speak **Bangla, English, Banglish, or a mix**. Sohayok answers in the language you used.
 - The window **hides by itself** when you're done. Click ✕ to hide it now, 📌 to keep it open.
@@ -77,8 +78,9 @@ That's it. From now on Sohayok starts by itself when you sign in and waits in th
         │
    2. Hearing ────── Whisper tells Bangla from English; BuzzASR (a Bangla Whisper) writes Bangla
         │
-   3. Deciding ───── everyday commands are recognised instantly; otherwise Laya-Bangla picks the
-        │            action in ~15 ms, and a small model (qwen3.5:2b) fills in the details
+   3. Deciding ───── everyday commands are recognised instantly; otherwise Laya-Bangla (fine-tuned
+        │            for these actions) picks one of 28 actions in ~0.2 s on the CPU, and the
+        │            answer model fills in the details: qwen3.5:2b on this PC, or an API you choose
         │
    4. Doing ──────── one of 48 actions: apps, windows, keyboard, mouse, files, volume, Chrome,
         │            YouTube, search, weather, reminders, GitHub, settings, PowerShell…
@@ -86,9 +88,13 @@ That's it. From now on Sohayok starts by itself when you sign in and waits in th
    5. Answering ──── a short spoken reply in a Bangladeshi Bangla or English voice
 ```
 
-Everything except the spoken voice and web searches runs on your PC: the wake word, speech
-recognition, the decision model, and the language model. Nothing is recorded unless you
-speak to it.
+With the default settings, everything except the spoken voice and web searches runs on your
+PC: the wake word, speech recognition, the decision model, and the answer model. Nothing is
+recorded unless you speak to it.
+
+**GPU use.** Speech recognition stays on the GPU (about 2.5 GB) so it answers quickly; the
+decision model runs on the CPU, and the answer model unloads itself two minutes after your
+last command. Quit Sohayok from the tray to free the GPU completely.
 
 ## Safety
 
@@ -105,7 +111,15 @@ Sohayok can do almost anything you can, so it is careful with what can't be undo
 
 ## Settings
 
-`uv run sohayok config` opens `%APPDATA%\Sohayok\config.toml`. The useful ones:
+Click **⚙** in the window:
+
+- **Answer model:** "This PC (Ollama)" is free and private. Or pick **OpenAI, Google Gemini,
+  Z.ai GLM, OpenRouter, Anthropic Claude**, or any **OpenAI-compatible** API (DeepSeek, Groq,
+  LM Studio, …), paste your API key, press **Load models**, and choose a model. Keys are kept
+  in Windows Credential Manager. With an API, the text of your request goes to that provider.
+- **Behaviour:** speak replies, ask before risky actions, wake word.
+
+Everything else is in `%APPDATA%\Sohayok\config.toml` (`uv run sohayok config`):
 
 ```toml
 [assistant]
@@ -115,11 +129,13 @@ confirm_risky_actions = true
 
 [activation]
 wake_model = "tammy"            # or "hey_jarvis"
-wake_threshold = 0.5            # lower = wakes more easily, higher = fewer false wake-ups
+wake_threshold = 0.3            # lower = wakes more easily, higher = fewer false wake-ups
+wake_instant_threshold = 0.8    # above this, wake at once without the Whisper check
 hotkey = "<ctrl>+<alt>+<space>"
 
 [brain]
-backend = "lite"                # "lite" (fast, light), "ollama" (one bigger model), "anthropic" (Claude)
+backend = "lite"                # Laya decides + answer model; "ollama" or "anthropic" = one model does all
+provider = "ollama"             # set from the Settings panel
 lite_model = "qwen3.5:2b"
 
 [speech]
@@ -133,11 +149,11 @@ and can also see the screen and use the mouse in any app. Screenshots then go to
 
 | Problem | Try |
 | --- | --- |
-| It doesn't wake up | Speak a little closer; lower `wake_threshold` to 0.4; or use the hotkey |
-| It wakes up by itself | Raise `wake_threshold` to 0.6–0.7 |
+| It doesn't wake up | Speak a little closer; lower `wake_threshold` to 0.2; or use the hotkey |
+| It wakes up by itself | Raise `wake_threshold` to 0.5, or `wake_instant_threshold` to 0.9 |
 | It hears the wrong words | Check the microphone in Windows Settings → Sound (input level 80–100%); the last recordings are in `%APPDATA%\Sohayok\recordings` with what it heard |
 | "voice unavailable" | Run `uv run sohayok setup`, then `uv run sohayok doctor` |
-| Slow answers | Close other GPU-heavy programs; the first command after start-up loads the models |
+| Slow answers | Other GPU programs (training, games) squeeze Sohayok out of GPU memory and make speech recognition very slow; close them. The first command after a pause reloads the answer model (2–3 s) |
 | Remove it | `uv run sohayok install --remove`, then quit from the tray icon |
 
 Logs: `%APPDATA%\Sohayok\sohayok.log`.
@@ -156,7 +172,20 @@ uv run sohayok doctor          # check the setup
 
 ## Benchmarks
 
-Methods, caveats, and full tables are in [docs/benchmarks.md](docs/benchmarks.md).
+Measured on an RTX 4060 (8 GB). Methods, caveats, and full tables:
+[docs/benchmarks.md](docs/benchmarks.md).
+
+| What | Result |
+| --- | --- |
+| Typed commands, right action (478: MASSIVE test + desktop) | **91.4%** with Laya + qwen3.5:2b, vs 70.7% for qwen3.5:4b alone; Bangla 90.8% (was 65.7%) |
+| Decision model alone | 91.8% (63.4% before fine-tuning) |
+| Bangla speech recognition, FLEURS (200 real sentences) | 21.6% WER / 9.1% CER, vs 77.2% / 39.4% for Whisper large-v3 |
+| Spoken commands, Bangla / English WER | 15.9% / 9.9%; a quiet microphone does as well (15.7%) |
+| Wake word on unseen voices / false wakes in 1 h of Bangla speech | 97.7% instant + Whisper-checked rest / 0 |
+
+Models: decider [`ashfaq1306/sohayok-laya-actions`](https://huggingface.co/ashfaq1306/sohayok-laya-actions)
+(fine-tuned from [`algolyzer/laya-bangla`](https://huggingface.co/algolyzer/laya-bangla)),
+wake word `src/sohayok/assets/tammy.onnx`.
 
 ## For developers
 
@@ -168,7 +197,9 @@ uv run ruff check . ; uv run ruff format --check .
 ```
 
 Training scripts: `sohayok.training.actions_data` and `finetune_decider` (the Laya action
-decider) and `sohayok.training.wake_word` (the "Tammy" detector).
+decider; `uv run sohayok setup --train-decider` rebuilds it) and `sohayok.training.wake_word`
+(the "Tammy" detector). Where the project stands and what to do next:
+[docs/HANDOFF.md](docs/HANDOFF.md).
 
 ## Credits and licenses
 

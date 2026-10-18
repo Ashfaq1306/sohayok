@@ -171,3 +171,6 @@ def test_wake_name_handling():
     assert strip_wake_name("Tamil movies") == "Tamil movies"
     assert heard_wake_name("Tammy.") and heard_wake_name("Hey Tommy") and heard_wake_name("ট্যামি")
     assert not heard_wake_name("open the window") and not heard_wake_name("আমি ভালো আছি")
+    # what Whisper wrote for the user's real "Tammy" attempts
+    assert all(heard_wake_name(t) for t in ("Demi.", "Demi", "Damn me?", "Atatemi"))
+    assert not any(heard_wake_name(t) for t in ("you", "Thank you.", "Ahem!"))
