@@ -36,7 +36,7 @@ class BrainConfig:
     decider_model: str = "auto"
     lite_model: str = "qwen3.5:2b"
     # Below this decision confidence, or for multi-step requests, the agent model takes over.
-    decider_min_confidence: float = 0.45
+    decider_min_confidence: float = 0.7  # below it Laya is right only ~41% of the time
     ollama_url: str = "http://127.0.0.1:11434"
     # Agent model for multi-step or unusual requests (and the whole job with backend "ollama").
     ollama_model: str = "qwen3.5:2b"

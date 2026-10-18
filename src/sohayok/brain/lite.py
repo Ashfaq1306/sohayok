@@ -91,7 +91,7 @@ class LiteBrain:
         model: str = "qwen3.5:2b",
         url: str = "http://127.0.0.1:11434",
         fallback: Any = None,
-        min_confidence: float = 0.45,
+        min_confidence: float = 0.7,
         keep_alive: str = "30m",
         client: httpx.Client | None = None,
     ) -> None:
