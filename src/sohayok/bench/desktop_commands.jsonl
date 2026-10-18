@@ -1,0 +1,60 @@
+{"text": "ক্রোম খোলো", "lang": "bn", "expect": [["open_app"]], "args": {"open_app": {"name": "chrome"}}}
+{"text": "নোটপ্যাড খুলে লেখো আমি ভালো আছি", "lang": "bn", "expect": [["open_app"], ["type_text"]], "args": {"type_text": {"text": "আমি ভালো আছি"}}}
+{"text": "open notepad and type hello world", "lang": "en", "expect": [["open_app"], ["type_text"]], "args": {"type_text": {"text": "hello world"}}}
+{"text": "ভলিউম পঞ্চাশ করো", "lang": "bn", "expect": [["volume"]], "args": {"volume": {"level": "50"}}}
+{"text": "set the volume to 30", "lang": "en", "expect": [["volume"]], "args": {"volume": {"level": "30"}}}
+{"text": "volume ektu komao", "lang": "en", "expect": [["volume"]], "args": {"volume": {"action": "down"}}}
+{"text": "সাউন্ড একদম বন্ধ করে দাও", "lang": "bn", "expect": [["volume"]], "args": {"volume": {"action": "mute"}}}
+{"text": "ইউটিউবে হাবিব ওয়াহিদের গান চালাও", "lang": "bn", "expect": [["play_youtube"]]}
+{"text": "play lofi music on youtube", "lang": "en", "expect": [["play_youtube"]]}
+{"text": "gaan ta thamao", "lang": "en", "expect": [["media"]]}
+{"text": "পরের গানটা দাও", "lang": "bn", "expect": [["media"]], "args": {"media": {"action": "next"}}}
+{"text": "এখন কয়টা বাজে?", "lang": "bn", "expect": [["current_time"]]}
+{"text": "what's the date today", "lang": "en", "expect": [["current_time"]]}
+{"text": "ঢাকার আবহাওয়া কেমন?", "lang": "bn", "expect": [["weather"]]}
+{"text": "will it rain in Sylhet today?", "lang": "en", "expect": [["weather"]], "args": {"weather": {"city": "sylhet"}}}
+{"text": "১০ মিনিট পরে মনে করিয়ে দিও চা খেতে হবে", "lang": "bn", "expect": [["set_reminder"]], "args": {"set_reminder": {"minutes": "10"}}}
+{"text": "set a timer for 5 minutes", "lang": "en", "expect": [["set_reminder"]], "args": {"set_reminder": {"minutes": "5"}}}
+{"text": "remind me at 7 pm to call mom", "lang": "en", "expect": [["set_reminder"]], "args": {"set_reminder": {"at": "7"}}}
+{"text": "গুগলে বাংলাদেশের রাজধানী সার্চ করো", "lang": "bn", "expect": [["web_search"]]}
+{"text": "search google for cheap flights to cox's bazar", "lang": "en", "expect": [["web_search"]]}
+{"text": "জিমেইল খোলো", "lang": "bn", "expect": [["open_website"]], "args": {"open_website": {"site": "mail"}}}
+{"text": "open my github", "lang": "en", "expect": [["open_website", "github_overview", "github_repos"]]}
+{"text": "আমার গিটহাবে নতুন কোনো নোটিফিকেশন আছে?", "lang": "bn", "expect": [["github_overview"]]}
+{"text": "list my github repositories", "lang": "en", "expect": [["github_repos"]]}
+{"text": "ফেসবুক খোলো", "lang": "bn", "expect": [["open_website"]], "args": {"open_website": {"site": "facebook"}}}
+{"text": "go to prothomalo.com", "lang": "en", "expect": [["open_website"]], "args": {"open_website": {"site": "prothomalo"}}}
+{"text": "একটা স্ক্রিনশট নাও", "lang": "bn", "expect": [["take_screenshot"]]}
+{"text": "lock my computer", "lang": "en", "expect": [["lock_screen"]]}
+{"text": "কম্পিউটার বন্ধ করে দাও", "lang": "bn", "expect": [["power"]], "args": {"power": {"action": "shutdown"}}}
+{"text": "restart the pc", "lang": "en", "expect": [["power"]], "args": {"power": {"action": "restart"}}}
+{"text": "ডাউনলোড ফোল্ডার খোলো", "lang": "bn", "expect": [["open_path"]], "args": {"open_path": {"path": "download"}}}
+{"text": "find my resume file", "lang": "en", "expect": [["find_files"]], "args": {"find_files": {"query": "resume"}}}
+{"text": "ডেস্কটপে প্রজেক্ট নামে একটা ফোল্ডার বানাও", "lang": "bn", "expect": [["create_folder"]]}
+{"text": "এই উইন্ডোটা ছোট করো", "lang": "bn", "expect": [["window_action"]], "args": {"window_action": {"action": "minimize"}}}
+{"text": "maximize this window", "lang": "en", "expect": [["window_action"]], "args": {"window_action": {"action": "maximize"}}}
+{"text": "switch to chrome", "lang": "en", "expect": [["switch_to_window"]]}
+{"text": "কোন কোন উইন্ডো খোলা আছে?", "lang": "bn", "expect": [["list_windows"]]}
+{"text": "chrome bondho koro", "lang": "en", "expect": [["close_app"]], "args": {"close_app": {"name": "chrome"}}}
+{"text": "copy this text: meeting at 3 pm", "lang": "en", "expect": [["set_clipboard"]]}
+{"text": "ক্লিপবোর্ডে কী আছে পড়ে শোনাও", "lang": "bn", "expect": [["get_clipboard"]]}
+{"text": "how much RAM and GPU memory is being used?", "lang": "en", "expect": [["system_status"]]}
+{"text": "কম্পিউটারের অবস্থা কেমন? সিপিইউ কত ব্যবহার হচ্ছে?", "lang": "bn", "expect": [["system_status"]]}
+{"text": "ওয়াইফাই সেটিংস খোলো", "lang": "bn", "expect": [["open_settings"]], "args": {"open_settings": {"page": "wifi"}}}
+{"text": "open bluetooth settings", "lang": "en", "expect": [["open_settings"]], "args": {"open_settings": {"page": "bluetooth"}}}
+{"text": "রবীন্দ্রনাথ ঠাকুর কে ছিলেন?", "lang": "bn", "expect": [["wikipedia_summary", "web_lookup"]]}
+{"text": "who is the prime minister of japan right now?", "lang": "en", "expect": [["web_lookup", "wikipedia_summary"]]}
+{"text": "একটা নোট রাখো: কাল সকালে মিটিং আছে", "lang": "bn", "expect": [["take_note"]]}
+{"text": "press control s", "lang": "en", "expect": [["press_keys"]], "args": {"press_keys": {"keys": "s"}}}
+{"text": "নতুন ট্যাব খোলো", "lang": "bn", "expect": [["press_keys"]], "args": {"press_keys": {"keys": "t"}}}
+{"text": "এই স্ক্রিনে কী কী বাটন আছে?", "lang": "bn", "expect": [["describe_screen"]]}
+{"text": "click the save button", "lang": "en", "expect": [["click_element", "describe_screen"]]}
+{"text": "ডেস্কটপ থেকে old.txt ফাইলটা ডিলিট করো", "lang": "bn", "expect": [["recycle", "find_files"]]}
+{"text": "install vlc using winget", "lang": "en", "expect": [["run_powershell"]], "args": {"run_powershell": {"command": "vlc"}}}
+{"text": "তুমি কে?", "lang": "bn", "expect": [[""]]}
+{"text": "tell me a short joke", "lang": "en", "expect": [[""]]}
+{"text": "ধন্যবাদ", "lang": "bn", "expect": [[""]]}
+{"text": "youtube khule bangla natok search koro", "lang": "en", "expect": [["web_search", "play_youtube", "open_website"]]}
+{"text": "open vs code", "lang": "en", "expect": [["open_app"]], "args": {"open_app": {"name": "code"}}}
+{"text": "ক্যালকুলেটর চালু করো", "lang": "bn", "expect": [["open_app"]], "args": {"open_app": {"name": "calc"}}}
+{"text": "show me the desktop", "lang": "en", "expect": [["show_desktop"]]}
