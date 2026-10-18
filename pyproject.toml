@@ -71,6 +71,7 @@ testpaths = ["tests"]
 [dependency-groups]
 bench = [
     "jiwer>=4.0.0",
+    "onnx>=1.23.2",
     "pyarrow>=26.0.0",
 ]
 dev = [

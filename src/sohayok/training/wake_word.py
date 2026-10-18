@@ -55,7 +55,25 @@ async def _voices() -> list[dict]:
     return await edge_tts.list_voices()
 
 
+CACHE: Path | None = None  # set by build(): synthesized clips are kept so reruns are quick
+
+
 def tts(text: str, voice: str, rate: str = "+0%", pitch: str = "+0Hz") -> np.ndarray:
+    if CACHE is not None:
+        import hashlib
+
+        key = hashlib.sha1(f"{text}|{voice}|{rate}|{pitch}".encode()).hexdigest()
+        path = CACHE / f"{key}.npy"
+        if path.exists():
+            return np.load(path)
+        audio = _tts(text, voice, rate, pitch)
+        CACHE.mkdir(parents=True, exist_ok=True)
+        np.save(path, audio)
+        return audio
+    return _tts(text, voice, rate, pitch)
+
+
+def _tts(text: str, voice: str, rate: str = "+0%", pitch: str = "+0Hz") -> np.ndarray:
     import edge_tts
     import soundfile as sf
     from scipy.signal import resample_poly
@@ -99,6 +117,14 @@ def place(audio: np.ndarray, rng: random.Random, end_at_tail: bool) -> np.ndarra
         start = rng.randint(0, max(0, CLIP - len(audio)))
         out[start : start + len(audio)] = audio
     return out
+
+
+def change_speed(audio: np.ndarray, rng: random.Random) -> np.ndarray:
+    """Speed and pitch perturbation by resampling (0.85-1.15x), a standard speech augmentation."""
+    from scipy.signal import resample_poly
+
+    factor = rng.choice([85, 90, 95, 100, 100, 105, 110, 115])
+    return audio if factor == 100 else resample_poly(audio, 100, factor).astype(np.float32)
 
 
 def augment(audio: np.ndarray, rng: random.Random) -> np.ndarray:
@@ -150,6 +176,8 @@ def build(fleurs: Path, out: Path, seed: int = 20261018) -> dict:
     """Synthesize and embed the training and validation sets; writes .npy feature files."""
     from openwakeword.utils import AudioFeatures
 
+    global CACHE
+    CACHE = out / "tts_cache"
     rng = random.Random(seed)
     voices = pick_voices(seed)
     split = {lang: (v[: int(len(v) * 0.8)], v[int(len(v) * 0.8) :]) for lang, v in voices.items()}
@@ -168,9 +196,10 @@ def build(fleurs: Path, out: Path, seed: int = 20261018) -> dict:
                             audio = tts(phrase, voice, rate, rng.choice(["-10Hz", "+0Hz", "+10Hz"]))
                         except Exception:
                             continue
-                        copies = 3 if part == "train" else 1
+                        copies = 6 if part == "train" else 1
                         for _ in range(copies):
-                            data[f"{part}_pos"].append(augment(place(audio, rng, True), rng))
+                            varied = change_speed(audio, rng) if part == "train" else audio
+                            data[f"{part}_pos"].append(augment(place(varied, rng, True), rng))
             for voice in split[lang][index][: max(4, len(split[lang][index]) // 2)]:
                 for word in CONFUSABLE[lang]:
                     try:
@@ -198,7 +227,10 @@ def build(fleurs: Path, out: Path, seed: int = 20261018) -> dict:
     out.mkdir(parents=True, exist_ok=True)
     summary = {}
     for name, clips in data.items():
-        emb = features.embed_clips(np.stack(clips), batch_size=64)[:, -16:, :].astype(np.float32)
+        pcm = (np.clip(np.stack(clips), -1, 1) * 32767).astype(
+            np.int16
+        )  # the model wants 16-bit PCM
+        emb = features.embed_clips(pcm, batch_size=64)[:, -16:, :].astype(np.float32)
         np.save(out / f"{name}.npy", emb)
         summary[name] = list(emb.shape)
     summary["val_neg_hours"] = round((len(val_speech) - 2000) / 3600, 3)  # 1 s hop windows
@@ -206,7 +238,13 @@ def build(fleurs: Path, out: Path, seed: int = 20261018) -> dict:
     return summary
 
 
-def train(features: Path, output: Path, steps: int = 6000, seed: int = 20261018) -> dict:
+def train(
+    features: Path,
+    output: Path,
+    steps: int = 8000,
+    seed: int = 20261018,
+    max_false_per_hour: float = 10.0,
+) -> dict:
     import torch
     from torch import nn
 
@@ -215,15 +253,18 @@ def train(features: Path, output: Path, steps: int = 6000, seed: int = 20261018)
     xp, xn, vp, vn = load("train_pos"), load("train_neg"), load("val_pos"), load("val_neg")
     model = nn.Sequential(
         nn.Flatten(),
+        nn.Dropout(0.2),
         nn.Linear(16 * 96, 128),
         nn.LayerNorm(128),
         nn.ReLU(),
-        nn.Linear(128, 128),
-        nn.LayerNorm(128),
+        nn.Dropout(0.3),
+        nn.Linear(128, 64),
+        nn.LayerNorm(64),
         nn.ReLU(),
-        nn.Linear(128, 1),
+        nn.Linear(64, 1),
         nn.Sigmoid(),
     )
+    hours = json.loads((features / "summary.json").read_text("utf-8"))["val_neg_hours"]
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=1e-3)
     loss_fn = nn.BCELoss(reduction="none")
     best = {"score": -1.0}
@@ -244,10 +285,14 @@ def train(features: Path, output: Path, steps: int = 6000, seed: int = 20261018)
             with torch.no_grad():
                 pp, pn = model(vp).squeeze(1), model(vn).squeeze(1)
             model.train()
-            for threshold in (0.5, 0.7, 0.9):
+            # Whisper double-checks every wake, so allow ~10 detector false accepts per hour
+            # of speech and keep the checkpoint and threshold that catch the most "Tammy"s.
+            for threshold in (0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9):
                 recall = float((pp >= threshold).float().mean())
                 false = int((pn >= threshold).sum())
-                score = recall - 0.05 * false
+                if false / hours > max_false_per_hour:
+                    continue
+                score = recall - 0.001 * false
                 if score > best["score"]:
                     best = {
                         "score": score,
@@ -255,11 +300,12 @@ def train(features: Path, output: Path, steps: int = 6000, seed: int = 20261018)
                         "threshold": threshold,
                         "recall": round(recall, 3),
                         "false_accepts": false,
+                        "false_per_hour": round(false / hours, 1),
                         "state": {k: v.clone() for k, v in model.state_dict().items()},
                     }
             print(
-                f"step {step} loss {loss.item():.4f} best {best['recall']} recall, "
-                f"{best['false_accepts']} false at {best['threshold']}",
+                f"step {step} loss {loss.item():.4f} best {best.get('recall')} recall, "
+                f"{best.get('false_per_hour')}/h false at {best.get('threshold')}",
                 flush=True,
             )
     model.load_state_dict(best.pop("state"))

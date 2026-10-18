@@ -202,7 +202,7 @@ def heard_wake_name(text: str) -> bool:
     return any(fuzz.ratio(word, name) >= 75 for word in words for name in WAKE_NAMES)
 
 
-def start_wake_word(assistant: Assistant, config: Config, activate: Callable[[], None]) -> str:
+def start_wake_word(assistant: Assistant, config: Config, activate: Callable[..., None]) -> str:
     """Listen for the wake word; returns how to say it (shown in the window)."""
     from sohayok.wake import WakeWordListener, resolve_wake_model
 
@@ -222,7 +222,7 @@ def start_wake_word(assistant: Assistant, config: Config, activate: Callable[[],
         return accepted
 
     listener.confirm = confirm
-    listener.on_wake = lambda: activate() if assistant.state == "idle" else None
+    listener.on_wake = lambda tail: activate(tail) if assistant.state == "idle" else None
     listener.paused = lambda: assistant.state not in {"idle"}
     threading.Thread(target=listener.run, name="wake-word", daemon=True).start()
     return f'say "{name}"'
@@ -280,11 +280,13 @@ def run(config: Config, show_window: bool = True, greet: bool = True) -> None:
     SCHEDULER.on_fire = announce
     SCHEDULER.start()
 
-    def activate() -> None:
+    def activate(lead=None) -> None:
         """Wake word, hotkey, or tray: show the window and listen."""
         if show_window:
             shell.show()
-        threading.Thread(target=assistant.listen_once, name="listen", daemon=True).start()
+        threading.Thread(
+            target=assistant.listen_once, kwargs={"lead": lead}, name="listen", daemon=True
+        ).start()
 
     shell.on_listen = activate
     app = create_app(

@@ -121,14 +121,23 @@ class Recorder:
             return energy_probability(frame)
         return self.detector.probability(frame)
 
-    def record(self) -> np.ndarray:
-        """Return 16 kHz mono float32 audio of one utterance (empty if nobody spoke)."""
+    def record(self, lead: np.ndarray | None = None) -> np.ndarray:
+        """Return 16 kHz mono float32 audio of one utterance (empty if nobody spoke).
+
+        `lead` is audio heard just before recording started (what followed the wake word
+        while it was being checked); it is processed first so "Tammy, open Chrome" said in
+        one breath keeps its first words.
+        """
         import sounddevice as sd
 
         self._stop.clear()
         if self.detector:
             self.detector.reset()
         frames: queue.Queue[np.ndarray] = queue.Queue()
+        if lead is not None and lead.size:
+            lead = lead.astype(np.float32)
+            for start in range(0, len(lead) - BLOCK + 1, BLOCK):
+                frames.put(lead[start : start + BLOCK])
 
         def callback(data, _frames, _time, status):
             if status:

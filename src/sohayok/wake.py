@@ -49,7 +49,8 @@ class WakeWordListener:
         self.name = next(iter(self.model.models))
         self.threshold = threshold
         self.device = int(device) if isinstance(device, str) and device.isdigit() else device
-        self.on_wake: Callable[[], None] = lambda: None
+        # Called with the audio that followed the wake word (float32, 16 kHz).
+        self.on_wake: Callable[[np.ndarray], None] = lambda tail: None
         # Second opinion on the last 2 s of audio (float32, 16 kHz); True accepts the wake.
         self.confirm: Callable[[np.ndarray], bool] = lambda audio: True
         # While True (the assistant is busy or speaking), audio is ignored.
@@ -105,9 +106,13 @@ class WakeWordListener:
                 if not accepted:
                     continue
                 log.info("wake word heard")
+                # Whatever was said while the wake word was being checked is the start of
+                # the command; hand it on rather than losing it.
+                waiting = stream.read_available
+                tail = stream.read(waiting)[0][:, 0] if waiting else np.zeros(0, np.int16)
                 stream.stop()  # release the microphone while the command is recorded
                 try:
-                    self.on_wake()
+                    self.on_wake(self._boost(tail).astype(np.float32) / 32768)
                 finally:
                     recent.clear()
                     stream.start()

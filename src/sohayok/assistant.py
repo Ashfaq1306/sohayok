@@ -164,7 +164,7 @@ class Assistant:
         self.broker.resolve(False)
 
     # ---- voice --------------------------------------------------------------------------
-    def listen_once(self, answer_only: bool = False) -> None:
+    def listen_once(self, answer_only: bool = False, lead: Any = None) -> None:
         """Record one utterance, transcribe it, and submit it.
 
         With `answer_only`, the recording is for a pending yes/no question and is discarded
@@ -187,7 +187,7 @@ class Assistant:
                 self.chime()
             except Exception:
                 pass
-            audio = self.recorder.record()
+            audio = self.recorder.record(lead) if lead is not None else self.recorder.record()
             if answer_only and self.broker.pending is None:
                 return
             if audio.size < 16_000 * 0.3:
