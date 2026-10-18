@@ -100,8 +100,8 @@
   <span class="pill" id="state">idle</span>
 </header>
 <main id="log">
-  <div class="empty" id="empty">মাইক চাপুন বা <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Space</kbd> দিয়ে বলুন।<br>
-    Press the mic or <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Space</kbd> and speak in Bangla or English.</div>
+  <div class="empty" id="empty">“Hey Jarvis” বলুন, মাইক চাপুন, বা <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Space</kbd> দিয়ে বলুন।<br>
+    Say “Hey Jarvis”, press the mic, or <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Space</kbd>, then speak Bangla or English.</div>
 </main>
 <div class="confirm" id="confirm" role="alertdialog" aria-live="assertive">
   <p id="confirm-q"></p>
@@ -196,7 +196,7 @@ $("no").onclick = () => post("/api/confirm", { answer: false });
 
 const info = {};
 function showInfo() {
-  $("backend").textContent = [info.backend, info.model, info.stt].filter(Boolean).join(" · ");
+  $("backend").textContent = [info.backend, info.model, info.stt, info.wake].filter(Boolean).join(" · ");
 }
 
 function connect() {
@@ -204,7 +204,7 @@ function connect() {
   ws.onmessage = (msg) => {
     const ev = JSON.parse(msg.data);
     if (ev.type === "hello") {
-      Object.assign(info, { backend: ev.backend, model: ev.model, stt: ev.stt });
+      Object.assign(info, { backend: ev.backend, model: ev.model, stt: ev.stt, wake: ev.wake });
       showInfo();
       for (const old of ev.history || []) handle(old);
       setState(ev.state);

@@ -31,7 +31,7 @@ bangla_model = "{bangla_model}"
 
 [activation]
 hotkey = "<ctrl>+<alt>+<space>"
-wake_word = false           # true: also listen for "hey jarvis"
+wake_word = true            # also listen for "hey jarvis" (false: hotkey only)
 """
 
 
@@ -41,7 +41,7 @@ def _setup_logging(verbose: bool) -> None:
     handlers: list[logging.Handler] = [
         logging.FileHandler(app_dir / "sohayok.log", encoding="utf-8")
     ]
-    if sys.stderr is not None:
+    if sys.stderr is not None and sys.stderr.isatty():
         handlers.append(logging.StreamHandler())
     logging.basicConfig(
         level=logging.DEBUG if verbose else logging.INFO,
@@ -188,7 +188,10 @@ def cmd_doctor(_: argparse.Namespace) -> None:
         from sohayok.audio import input_devices
 
         devices = input_devices()
-        checks.append(("Microphone", bool(devices), devices[0] if devices else "no input device"))
+        default = next(
+            (d for d in devices if d.endswith("(default)")), devices[0] if devices else ""
+        )
+        checks.append(("Microphone", bool(devices), default or "no input device"))
     except Exception as exc:
         checks.append(("Microphone", False, str(exc)))
     try:
@@ -204,6 +207,10 @@ def cmd_doctor(_: argparse.Namespace) -> None:
         )
     except Exception as exc:
         checks.append(("Google Chrome", False, str(exc)))
+    from sohayok.models import resolve_bangla_model
+
+    bangla = resolve_bangla_model(config.speech.bangla_model)
+    checks.append(("Bangla speech model", bool(bangla), bangla or "run: sohayok setup"))
     from sohayok.tools.shell import gh_path
 
     checks.append(("GitHub CLI", bool(gh_path()), gh_path() or "winget install GitHub.cli"))
@@ -285,9 +292,21 @@ def cmd_startup(args: argparse.Namespace) -> None:
     print(f"created {shortcut}")
 
 
-def main(argv: list[str] | None = None) -> None:
-    if sys.stdout is not None:
+def _ensure_streams() -> None:
+    """Under pythonw (startup shortcut, no console) stdout and stderr are None, and the first
+    progress bar or warning from a library would crash the app. Send them to a log file."""
+    if sys.stdout is None or sys.stderr is None:
+        log_dir = config_module.app_dir()
+        log_dir.mkdir(parents=True, exist_ok=True)
+        stream = open(log_dir / "console.log", "a", encoding="utf-8", buffering=1)  # noqa: SIM115
+        sys.stdout = sys.stdout or stream
+        sys.stderr = sys.stderr or stream
+    else:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
+
+def main(argv: list[str] | None = None) -> None:
+    _ensure_streams()
     parser = argparse.ArgumentParser(prog="sohayok", description=__doc__)
     parser.add_argument("-v", "--verbose", action="store_true")
     sub = parser.add_subparsers(dest="command")

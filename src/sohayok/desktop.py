@@ -210,7 +210,11 @@ def run(config: Config, show_window: bool = True, greet: bool = True) -> None:
     ).start()
     start_hotkey(assistant, config.activation.hotkey)
     if config.activation.wake_word:
-        start_wake_word(assistant, config)
+        try:
+            start_wake_word(assistant, config)
+            info["wake"] = 'say "hey jarvis"'
+        except Exception as exc:  # e.g. the optional openwakeword package is missing
+            log.warning("wake word unavailable (%s); use the hotkey", exc)
     while not port_in_use(host, port):
         time.sleep(0.1)
     assistant.start(greet=greet)

@@ -68,8 +68,9 @@ class VoiceConfig:
 @dataclass
 class ActivationConfig:
     hotkey: str = "<ctrl>+<alt>+<space>"
-    # Listen continuously for the wake word ("hey jarvis") as well as the hotkey.
-    wake_word: bool = False
+    # Listen continuously (on this PC only) for the wake word "hey jarvis" as well as the
+    # hotkey. Needs the "wake" extra; without it only the hotkey works.
+    wake_word: bool = True
     wake_model: str = "hey_jarvis"
     wake_threshold: float = 0.5
 
