@@ -148,6 +148,18 @@ QUESTION = {
 }
 
 
+def resolve_decider(setting: str) -> tuple[str, str | None]:
+    """(checkpoint, revision). "auto" prefers Sohayok's fine-tune when it has been prepared."""
+    if setting != "auto":
+        return setting, None
+    from sohayok.config import app_dir
+
+    local = app_dir() / "models" / "laya-sohayok-actions"
+    if (local / "model.safetensors").exists():
+        return str(local), None
+    return LAYA_REPO, LAYA_REVISION
+
+
 @dataclass
 class Decision:
     action: str

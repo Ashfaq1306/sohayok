@@ -294,12 +294,30 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--per-intent", type=int, default=12)
     parser.add_argument("--no-router", action="store_true", help="score the model alone")
     parser.add_argument("--router-only", action="store_true")
+    parser.add_argument(
+        "--lite", action="append", default=[], help="small model for the Laya pipeline (repeatable)"
+    )
+    parser.add_argument("--decider", default="auto", help="Laya checkpoint for --lite")
+    parser.add_argument("--agent", default="qwen3.5:4b", help="fallback agent for --lite")
     args = parser.parse_args(argv)
 
     cases = massive_cases(args.massive, args.per_intent) + desktop_cases()
     args.output.mkdir(parents=True, exist_ok=True)
     runs = [("router", None)] if args.router_only else []
     runs += [(m, (lambda m=m: OllamaBrain(m, max_steps=6))) for m in args.model]
+    if args.lite:
+        from sohayok.brain.lite import LiteBrain
+        from sohayok.decide import LayaDecider, resolve_decider
+
+        decider = LayaDecider(*resolve_decider(args.decider))
+        tag = "laya-ft" if "sohayok" in resolve_decider(args.decider)[0] else "laya"
+        runs += [
+            (
+                f"{tag}+{m}",
+                (lambda m=m: LiteBrain(decider, m, fallback=OllamaBrain(args.agent, max_steps=6))),
+            )
+            for m in args.lite
+        ]
     summary = {}
     for name, factory in runs:
         results = evaluate(factory, cases, use_router=not args.no_router)

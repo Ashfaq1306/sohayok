@@ -28,8 +28,15 @@ class AssistantConfig:
 
 @dataclass
 class BrainConfig:
-    # "ollama" (local, private, free) or "anthropic" (Claude API; needs ANTHROPIC_API_KEY).
-    backend: str = "ollama"
+    # "lite": Laya-Bangla decides the action and a small model fills in details (fast, light);
+    # "ollama": one local model with all tools; "anthropic": Claude (needs ANTHROPIC_API_KEY).
+    backend: str = "lite"
+    # Laya checkpoint for decisions: "auto" = Sohayok's fine-tune if prepared, else the
+    # published algolyzer/laya-bangla.
+    decider_model: str = "auto"
+    lite_model: str = "qwen3.5:2b"
+    # Below this decision confidence, or for multi-step requests, the agent model takes over.
+    decider_min_confidence: float = 0.45
     ollama_url: str = "http://127.0.0.1:11434"
     ollama_model: str = "qwen3.5:4b"
     ollama_keep_alive: str = "30m"

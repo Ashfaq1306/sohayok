@@ -81,6 +81,30 @@ def build_brain(config: Config) -> tuple[Any, dict[str, str]]:
             return brain, {"backend": "Claude", "model": brain_config.anthropic_model}
     from sohayok.brain.ollama import OllamaBrain
 
+    if brain_config.backend == "lite":
+        from sohayok.brain.lite import LiteBrain
+        from sohayok.decide import LayaDecider, resolve_decider
+
+        model, revision = resolve_decider(brain_config.decider_model)
+        agent = OllamaBrain(
+            brain_config.ollama_model,
+            brain_config.ollama_url,
+            config.assistant.name,
+            config.assistant.home_city,
+            brain_config.max_steps,
+            brain_config.temperature,
+            brain_config.ollama_keep_alive,
+        )
+        brain = LiteBrain(
+            LayaDecider(model, revision),
+            brain_config.lite_model,
+            brain_config.ollama_url,
+            fallback=agent,
+            min_confidence=brain_config.decider_min_confidence,
+            keep_alive=brain_config.ollama_keep_alive,
+        )
+        threading.Thread(target=_warm, args=(brain,), name="warm-llm", daemon=True).start()
+        return brain, {"backend": "Laya-Bangla", "model": brain_config.lite_model}
     brain = OllamaBrain(
         brain_config.ollama_model,
         brain_config.ollama_url,

@@ -70,8 +70,8 @@ class DesktopShell:
         return (int((right - margin) / scale) - WIDTH, int((bottom - margin) / scale) - HEIGHT)
 
     def _style(self) -> None:
-        """Keep the pop-up out of the taskbar and Alt+Tab (the tray icon is its home), and give
-        it the face icon."""
+        """Round the corners (Windows 11) and give the window the face icon. Called once the
+        window is on screen; changing its styles earlier breaks the WinForms window."""
         import win32con
         import win32gui
 
@@ -79,24 +79,20 @@ class DesktopShell:
         if not hwnd:
             return
         self._hwnd = hwnd
-        try:  # Windows 11 rounds the corners of the frameless window (DWMWA_WINDOW_CORNER_PREFERENCE)
+        try:  # DWMWA_WINDOW_CORNER_PREFERENCE = 33, DWMWCP_ROUND = 2
             preference = ctypes.c_int(2)
             ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 33, ctypes.byref(preference), 4)
         except OSError:
             pass
-        style = win32gui.GetWindowLong(hwnd, win32con.GWL_EXSTYLE)
-        style = (style | win32con.WS_EX_TOOLWINDOW) & ~win32con.WS_EX_APPWINDOW
-        win32gui.SetWindowLong(hwnd, win32con.GWL_EXSTYLE, style)
         try:
             from importlib import resources
 
             ico = str(resources.files("sohayok").joinpath("ui/icon.ico"))
-            big = win32gui.LoadImage(0, ico, win32con.IMAGE_ICON, 48, 48, win32con.LR_LOADFROMFILE)
-            small = win32gui.LoadImage(
-                0, ico, win32con.IMAGE_ICON, 16, 16, win32con.LR_LOADFROMFILE
-            )
-            win32gui.SendMessage(hwnd, win32con.WM_SETICON, win32con.ICON_BIG, big)
-            win32gui.SendMessage(hwnd, win32con.WM_SETICON, win32con.ICON_SMALL, small)
+            flags = win32con.LR_LOADFROMFILE
+            big = win32gui.LoadImage(0, ico, win32con.IMAGE_ICON, 48, 48, flags)
+            small = win32gui.LoadImage(0, ico, win32con.IMAGE_ICON, 16, 16, flags)
+            win32gui.PostMessage(hwnd, win32con.WM_SETICON, win32con.ICON_BIG, big)
+            win32gui.PostMessage(hwnd, win32con.WM_SETICON, win32con.ICON_SMALL, small)
         except Exception:
             log.debug("could not set the window icon", exc_info=True)
 
@@ -174,7 +170,5 @@ class DesktopShell:
         self.visible = not start_hidden
         self._start_tray()
 
-        def ready() -> None:
-            self._style()
-
-        webview.start(ready)
+        self.window.events.shown += self._style
+        webview.start()

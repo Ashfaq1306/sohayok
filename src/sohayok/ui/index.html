@@ -18,13 +18,14 @@
     --green: #0b9e62; --red: #d6304f; --amber: #b86e00;
   }
   * { box-sizing: border-box; }
-  body > header, body > .sub, body > .stage, body > main, body > footer { width: min(100%, 860px); justify-self: center; }
+  body > header, body > .sub, body > .stage, body > main, body > footer { width: min(100%, 860px); min-width: 0; justify-self: center; }
   html, body { height: 100%; margin: 0; }
   body {
     background: radial-gradient(1200px 700px at 50% -10%, var(--sky) 0%, var(--bg) 55%) fixed, var(--bg);
     color: var(--text); overflow: hidden;
     font: 14.5px/1.5 "Segoe UI Variable Text", "Segoe UI", "Nirmala UI", "Noto Sans Bengali", system-ui, sans-serif;
-    display: grid; grid-template-rows: auto auto auto 1fr auto; height: 100vh;
+    display: grid; grid-template-rows: auto auto auto 1fr auto; grid-template-columns: minmax(0, 1fr);
+    height: 100vh;
   }
   /* faint moving perspective grid; a transform-only animation stays smooth */
   body::before {
