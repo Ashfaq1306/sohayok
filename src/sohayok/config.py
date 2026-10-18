@@ -38,7 +38,8 @@ class BrainConfig:
     # Below this decision confidence, or for multi-step requests, the agent model takes over.
     decider_min_confidence: float = 0.45
     ollama_url: str = "http://127.0.0.1:11434"
-    ollama_model: str = "qwen3.5:4b"
+    # Agent model for multi-step or unusual requests (and the whole job with backend "ollama").
+    ollama_model: str = "qwen3.5:2b"
     ollama_keep_alive: str = "30m"
     anthropic_model: str = "claude-sonnet-5-5"
     # Let Claude see the screen and use the mouse (Anthropic backend only).
@@ -83,7 +84,7 @@ class ActivationConfig:
     wake_word: bool = True
     # "tammy" (Sohayok's own model), "hey_jarvis", or a path to an openWakeWord .onnx model.
     wake_model: str = "tammy"
-    wake_threshold: float = 0.5
+    wake_threshold: float = 0.3  # measured operating point for "tammy" with the Whisper check
     # Double-check each wake with Whisper before waking (fewer false wake-ups).
     wake_confirm: bool = True
 

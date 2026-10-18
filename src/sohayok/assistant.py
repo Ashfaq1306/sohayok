@@ -290,6 +290,10 @@ class Assistant:
             if tool and "language" in tool.parameters.get("properties", {}):
                 args.setdefault("language", language)  # e.g. the time read out in Bangla
             result = self.executor.run(intent.tool, args)
+            for step, step_args in intent.then:
+                if result.startswith(("error", "cancelled")):
+                    break
+                result = self.executor.run(step, step_args)
             if not result.startswith(("error", "cancelled")):
                 text = intent.reply.get(language, intent.reply.get("en", DONE[language]))
                 text = text.replace("{result}", result)

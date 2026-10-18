@@ -20,6 +20,8 @@ class Intent:
     args: dict[str, Any] = field(default_factory=dict)
     # Spoken confirmation, keyed by language; "{result}" is replaced with the tool result.
     reply: dict[str, str] = field(default_factory=dict)
+    # Further (tool, args) steps run after the first one, e.g. typing after opening an app.
+    then: list[tuple[str, dict[str, Any]]] = field(default_factory=list)
 
 
 OPEN = r"(?:খোলো|খুলো|খুলুন|খোল|ওপেন করো|ওপেন করুন|ওপেন কর|চালু করো|চালু করুন|kholo|khulo|khol|open koro|open kor|chalu koro)"
@@ -29,6 +31,7 @@ VOLUME = r"(?:ভলিউম|সাউন্ড|আওয়াজ|শব্দ
 UP = r"(?:বাড়াও|বাড়িয়ে দাও|বাড়ান|বেশি করো|barao|bariye dao|up|increase|louder)"
 DOWN = r"(?:কমাও|কমিয়ে দাও|কমান|কম করো|komao|komiye dao|down|decrease|lower|quieter)"
 SET = r"(?:করো|করুন|কর|দাও|koro|kor|dao|set|to|at)"
+FILLER = r"(?:\s+(?:ektu|একটু|আরেকটু|আরো|aro|ta|টা|টাকে))?"
 
 
 def _rx(pattern: str) -> re.Pattern[str]:
@@ -49,7 +52,7 @@ def rule(*patterns: str):
 
 
 @rule(
-    rf"{VOLUME}\s*{UP}",
+    rf"{VOLUME}{FILLER}\s*{UP}",
     rf"(?:turn (?:the )?)?{VOLUME} up",
     rf"(?:increase|raise) (?:the )?{VOLUME}",
 )
@@ -60,7 +63,7 @@ def _volume_up(m, text):
 
 
 @rule(
-    rf"{VOLUME}\s*{DOWN}",
+    rf"{VOLUME}{FILLER}\s*{DOWN}",
     rf"(?:turn (?:the )?)?{VOLUME} down",
     rf"(?:decrease|lower) (?:the )?{VOLUME}",
 )
@@ -199,6 +202,30 @@ def _search(m, text):
         return None
     return Intent(
         "web_search", {"query": query, "engine": "google"}, {"bn": "খুঁজছি।", "en": "Searching."}
+    )
+
+
+@rule(
+    r"(?P<x>\S+(?: \S+)?) খুলে (?:লেখো|লিখো|লিখে দাও|টাইপ করো)[:,]?\s+(?P<t>.+)",
+    r"(?P<x>\S+(?: \S+)?) khule (?:likho|lekho|type koro)[:,]?\s+(?P<t>.+)",
+    r"open (?P<x>\S+(?: \S+)?) and (?:type|write)[:,]?\s+(?P<t>.+)",
+)
+def _open_and_type(m, text):
+    """The most common two-step request: open an app, then dictate into it."""
+    from sohayok.tools.apps import resolve_app, start_apps
+
+    try:
+        app = resolve_app(m.group("x"), start_apps())
+    except Exception:
+        app = None
+    if not app:
+        return None
+    words = m.group("t").strip().strip("\"'“”")
+    return Intent(
+        "open_app",
+        {"name": app},
+        {"bn": f"{app} খুলে লিখে দিলাম।", "en": f"Opened {app} and typed it."},
+        then=[("type_text", {"text": words})],
     )
 
 

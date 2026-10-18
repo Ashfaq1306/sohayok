@@ -203,3 +203,19 @@ def test_clicked_answer_discards_the_pending_recording():
     time.sleep(0.2)
     assert calls == [] and assistant.commands.empty()
     assert not any(e["type"] == "heard" and "amore" in e["text"] for e in events)
+
+
+def test_fast_path_runs_every_step():
+    calls = []
+    assistant, _ = _assistant(FakeBrain(), calls)
+    assistant.registry.add(
+        Tool(
+            "type_text",
+            "t",
+            {"type": "object", "properties": {}},
+            lambda **kw: calls.append(("type_text", kw)) or "typed",
+        )
+    )
+    reply = assistant.handle(Command("নোটপ্যাড খুলে লেখো আমি ভালো আছি"))
+    assert calls == [("open_app", {"name": "Notepad"}), ("type_text", {"text": "আমি ভালো আছি"})]
+    assert reply == "Notepad খুলে লিখে দিলাম।"

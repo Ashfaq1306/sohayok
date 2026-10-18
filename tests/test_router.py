@@ -17,6 +17,8 @@ from sohayok.router import route
         ("open prothomalo.com", "open_website", {"site": "https://prothomalo.com"}),
         ("ভলিউম বাড়াও", "volume", {"action": "up", "level": 10}),
         ("volume barao", "volume", {"action": "up", "level": 10}),
+        ("volume ektu komao", "volume", {"action": "down", "level": 10}),
+        ("ভলিউম একটু বাড়াও", "volume", {"action": "up", "level": 10}),
         ("turn the volume down", "volume", {"action": "down", "level": 10}),
         ("ভলিউম পঞ্চাশ করো", "volume", {"action": "set", "level": 50}),
         ("ভলিউম ৩০ করো", "volume", {"action": "set", "level": 30}),
@@ -78,3 +80,11 @@ def test_known_folder_resolves_to_a_path():
 )
 def test_leaves_everything_else_to_the_model(text):
     assert route(text) is None
+
+
+def test_open_then_type_is_one_instant_command():
+    intent = route("নোটপ্যাড খুলে লেখো আমি ভালো আছি")
+    assert (intent.tool, intent.args) == ("open_app", {"name": "Notepad"})
+    assert intent.then == [("type_text", {"text": "আমি ভালো আছি"})]
+    english = route("open notepad and type hello world")
+    assert english.then == [("type_text", {"text": "hello world"})]
