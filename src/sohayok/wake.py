@@ -85,6 +85,7 @@ class WakeWordListener:
         # no speech); the user's real "Tammy"s had 0.4-0.9 s.
         self.min_speech = 0.2
         self._vad = None
+        self.restarts = 0  # times the microphone was reopened after failing
 
     def speech_in(self, audio: np.ndarray) -> float:
         """Seconds of speech in float32 16 kHz audio (inf when the VAD is unavailable).
@@ -127,13 +128,38 @@ class WakeWordListener:
         return best
 
     def run(self) -> None:
+        """Listen forever. When the microphone disappears (Bluetooth earbuds disconnect or
+        switch, a USB microphone is unplugged), wait and reopen whichever microphone Windows
+        now uses, instead of going deaf."""
         import sounddevice as sd
 
         log.info("listening for the wake word %r", self.name)
+        failures = 0
+        while True:
+            started = time.monotonic()
+            try:
+                self._listen(self.device if failures < 2 else None)
+            except Exception as error:
+                failures = 1 if time.monotonic() - started > 60 else failures + 1
+                log.warning("microphone failed (%s); reopening it", error)
+                time.sleep(min(10.0, 1.0 * failures))
+                try:  # PortAudio lists devices once; refresh it to see the current ones
+                    sd._terminate()
+                    sd._initialize()
+                except Exception:
+                    log.debug("could not refresh the audio devices", exc_info=True)
+                self.model.reset()
+                self.restarts += 1
+
+    def _listen(self, device: str | int | None) -> None:
+        import sounddevice as sd
+
         recent: collections.deque[np.ndarray] = collections.deque(maxlen=25)  # 2 s
         with sd.InputStream(
-            samplerate=16_000, channels=1, dtype="int16", blocksize=FRAME, device=self.device
+            samplerate=16_000, channels=1, dtype="int16", blocksize=FRAME, device=device
         ) as stream:
+            if self.restarts:
+                log.info("microphone open again: %s", sd.query_devices(stream.device)["name"])
             cooldown = 0.0
             while True:
                 frame, _ = stream.read(FRAME)
@@ -170,6 +196,8 @@ class WakeWordListener:
                 stream.stop()  # release the microphone while the command is recorded
                 try:
                     self.on_wake(self._boost(tail).astype(np.float32) / 32768)
+                except Exception:
+                    log.exception("handling the wake word failed")
                 finally:
                     recent.clear()
                     stream.start()

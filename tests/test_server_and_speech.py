@@ -244,3 +244,34 @@ def test_user_wake_spellings_in_bangla():
 
     assert all(heard_wake_name(t) for t in ("ডেমি", "টেমি", "তামি", "ড্যামি", "কেমি", "dummy"))
     assert not any(heard_wake_name(t) for t in ("কী", "সার্চ", "লাইফস্টাইল", "Search."))
+
+
+def test_wake_listener_reopens_a_lost_microphone(monkeypatch):
+    """Bluetooth earbuds disconnecting used to kill the wake-word thread for good."""
+    import sounddevice as sd
+
+    from sohayok import wake
+
+    listener = object.__new__(wake.WakeWordListener)
+    listener.name, listener.device, listener.restarts = "tammy", None, 0
+    listener.model = type("M", (), {"reset": lambda self: None})()
+    opened = []
+
+    class Done(BaseException):
+        pass
+
+    def listen(device):
+        opened.append(device)
+        if len(opened) == 1:
+            raise sd.PortAudioError("There is no driver installed on your system.")
+        raise Done
+
+    monkeypatch.setattr(listener, "_listen", listen)
+    monkeypatch.setattr(wake.time, "sleep", lambda s: None)
+    monkeypatch.setattr(sd, "_terminate", lambda: None)
+    monkeypatch.setattr(sd, "_initialize", lambda: None)
+    try:
+        listener.run()
+    except Done:
+        pass
+    assert len(opened) == 2 and listener.restarts == 1
