@@ -67,8 +67,16 @@ That's it. From now on Sohayok starts by itself when you sign in and waits in th
 - **Things to try:** "This PC খোলো", "ডি ড্রাইভে যাও", "এখানে হিসাব নামে একটা ফোল্ডার বানাও",
   "ইউটিউবের ট্যাবটা কেটে দাও", "রহিমকে হোয়াটসঅ্যাপে কল দাও", "Karim-কে হোয়াটসঅ্যাপে লেখো আমি
   আসছি", "open Chrome and search for flights to Dhaka", "ব্লুটুথ অফ করো", "জেবিএল স্পিকারটা
-  ডিসকানেক্ট করো", "connect my earbuds", "নোটিফিকেশনে কী আছে", "রিপ্লাই দাও আমি আসছি".
+  ডিসকানেক্ট করো", "connect my earbuds", "নোটিফিকেশনে কী আছে", "রিপ্লাই দাও আমি আসছি",
+  "নোটিফিকেশনগুলো ক্লিয়ার করো", "ব্রাইটনেস কমাও", "ডার্ক মোড চালু করো", "আমার প্রিন্টার
+  কানেক্টেড আছে?", "আমার পিসির কনফিগারেশন বলো", "সবগুলো ইউটিউব ট্যাব বন্ধ করো", "জুম করো",
+  "মনে রাখো আমার অফিস সকাল নয়টায়".
   Mixing English words into Bangla is fine; English gets an English answer, Bangla a Bangla one.
+- **Anything else on screen:** "পেইন্ট খুলে একটা লাল বৃত্ত আঁকো", "Excel-এ A1 এ হ্যালো লেখো",
+  "open Spotify and play lofi". Claude looks at the screen and uses the mouse and keyboard like
+  a person (20-60 seconds; leave the mouse alone meanwhile). Say "থামো" / "stop" to stop it.
+  It asks before anything that can't be undone and never types passwords. Needs the Claude
+  API key; each task costs a few cents.
 - **WhatsApp** (read, send, reply, voice and video calls) needs WhatsApp for Windows signed in
   once (open it and scan its QR code with your phone). Sohayok asks before it sends or calls,
   and says so if WhatsApp is signed out. Contacts saved in English are found from Bangla names
@@ -122,7 +130,9 @@ Sohayok can do almost anything you can, so it is careful with what can't be undo
   "হ্যাঁ"/"না" or "yes"/"no", or press the buttons. A spoken "yes" must be short and clear.
 - It **never claims** something happened when you said no or it failed.
 - It asks before sending, posting, buying, or submitting anything in an app or website.
-- It **never types passwords**, PINs, card numbers, or one-time codes.
+- It **never types passwords**, PINs, card numbers, or one-time codes, and never signs in.
+- When it works on the screen for you, it stops at anything consequential (sending, buying,
+  deleting, submitting, accepting terms) and asks you out loud first.
 - Text it reads from websites, files, or the screen is treated as information, never as
   instructions.
 

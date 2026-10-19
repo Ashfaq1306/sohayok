@@ -415,6 +415,10 @@ def run(config: Config, show_window: bool = True, greet: bool = True) -> None:
     )
     assistant = Assistant(config, registry, brain, speaker, window_title=lambda: tracker.title)
     assistant.executor.focus_target = tracker.refocus
+    from sohayok.tools import computer
+
+    computer.ASK = assistant.executor.ask_user  # screen tasks ask before anything irreversible
+    computer.SPEAKING = lambda: assistant.executor.language
     from sohayok.audio import chime
 
     assistant.chime = chime

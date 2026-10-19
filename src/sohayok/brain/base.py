@@ -22,8 +22,10 @@ web_lookup) instead of answering from memory, then answer briefly.
 - Never say you did something unless a tool result confirms it. If a tool fails, say so briefly \
 and suggest what the user can do.
 - Prefer the specific tool (open_app, open_website, play_youtube, volume, media, window_action) \
-over generic keyboard and mouse control. To operate inside an app, call describe_screen, then \
-click_element or type_text.
+over generic keyboard and mouse control. For anything inside an app that no specific tool \
+covers (drawing, menus, forms, several clicks), call use_computer once with the whole task.
+- When the user says "remember ...", call remember. Facts they asked you to remember are in \
+the request's context.
 - Before any irreversible action inside an app or website (sending a message or email, posting, \
 buying, deleting, submitting a form) call confirm_with_user first.
 - Never type passwords, PINs, card numbers, or one-time codes. Ask the user to type them.
@@ -50,10 +52,15 @@ def system_prompt(name: str, city: str) -> str:
 
 def user_message(text: str, language: str, window: str) -> str:
     """The request with its changing context (time, active window, reply language) in front."""
+    from sohayok.tools.memory import context as remembered
+
     context = (
         f"[{datetime.now():%A %d %B %Y, %H:%M} | active window: {window or 'unknown'} | "
         f"reply in {LANGUAGE_NAMES.get(language, 'English')}]"
     )
+    known = remembered()
+    if known:
+        context += f"\n[{known}]"
     return f"{context}\n{text}"
 
 

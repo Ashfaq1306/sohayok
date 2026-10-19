@@ -167,6 +167,9 @@ class Assistant:
         self.commands.put(Command(text, language, source))
 
     def interrupt(self) -> None:
+        from sohayok.tools.computer import STOP
+
+        STOP.set()  # a screen task in progress stops after its current action
         if self.speaker:
             self.speaker.stop()
         if self.recorder:

@@ -69,6 +69,21 @@ bench/       stt, brain, voice, wake benchmarks; docs/benchmarks.md has the numb
   বাড়াও", "আমি আসলে জানতে চাচ্ছি যে কাইনেটিক এনার্জি…"); the detector fired on their
   "Tammy" but Whisper heard "Demi" and refused, now fixed (accepted spellings + instant
   wake). **Not yet confirmed with their voice after the fix.**
+- Round 5 (2026-10-20, "give it all the access"):
+  - `bench/replay.py` replays the user's real transcribed commands (56 cases) through the
+    real brain with every tool recorded instead of run: 39/56 -> 54/56 right first action.
+  - New tools: `use_computer` (Claude computer use toolset on screenshots at 1366 px, prompt
+    cached, asks via the yes/no broker before consequential steps, stops on "stop"; tested
+    live: Notepad typing 25 s, a red circle in Paint 29 s), `brightness` (WMI, DDC/CI, or a
+    gamma ramp down to 50% - the user's monitor answers neither WMI nor DDC/CI), `dark_mode`,
+    `pc_specs`, `list_printers` (the user's Epson L3350 shows offline),
+    `dismiss_notifications` (notification centre "Clear all" buttons; found, not pressed),
+    `remember` / `forget` (memory.json, given to the model with every request).
+  - Router: notification clearing, zoom in/out, every tab of a site, "অন করো" as open,
+    "Google X ওপেন" opens X, "ক্রোমটা" -> Chrome, "dishpc" -> This PC. Sums go to the chat
+    model instead of a web lookup. Claude is called through the SDK at low effort.
+  - The wake listener reopens a failed microphone and follows Windows' default microphone;
+    speech recognition loads at high GPU priority (6.5 s instead of 4+ minutes).
 - Round 4 (2026-10-19 evening, after a full day of use):
   - The other project's 13 processes also kept the CPU at 97%: the decider took 1.3-4.8 s.
     Sohayok now runs at high CPU priority (`assistant.cpu_priority`): 0.23 s.
@@ -141,7 +156,6 @@ bench/       stt, brain, voice, wake benchmarks; docs/benchmarks.md has the numb
    chat list items and their unread text, "message-in"/"message-out" rows, message box,
    call buttons) and test `whatsapp_open_chat`, `whatsapp_unread`, `whatsapp_read_chat`
    live; test sending only with the user's go-ahead (their own "Message yourself" chat).
-   The control names in `tools/whatsapp.py` are WhatsApp Web's and are unverified.
    Also ask what the user meant by controlling the "fan".
 2. **Try "Tammy" and commands with the real voice.** The log now has `heard … in … s` and
    `handled in … s` lines per command; replay wake clips with `python -m sohayok.bench.wake_user`

@@ -48,7 +48,7 @@ def test_every_tool_belongs_to_one_action():
     from sohayok.brain.lite import keyword_action
 
     by_keyword = set()
-    for text in ("whatsapp", "call x", "notification", "reply ok"):
+    for text in ("whatsapp", "call x", "notification", "reply ok", "মনে রাখো x"):
         by_keyword |= set(keyword_action(text).tools)
     others = {"find_apps", "move_mouse", "click", "scroll", "ask_claude_code"}
     missing = names - set(TOOL_ACTION) - others - by_keyword

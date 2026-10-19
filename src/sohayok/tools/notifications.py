@@ -107,3 +107,58 @@ def read_notifications(app: str = "", limit: int = 3) -> dict:
     bn = " ".join(f"{i['app']}-এ {i['title']}: {i['text']}।" for i in items)
     en = " ".join(f"{i['app']}, {i['title']}: {i['text']}." for i in items)
     return {"notifications": items, "spoken_bn": bn, "spoken_en": en}
+
+
+def _clear_button(app: str = ""):
+    """The notification centre's "Clear all" button, or the one for `app` ("WhatsApp")."""
+    import subprocess
+    import time
+
+    import uiautomation as auto
+
+    subprocess.Popen(["explorer.exe", "ms-actioncenter:"])
+    deadline = time.monotonic() + 4
+    while time.monotonic() < deadline:
+        time.sleep(0.4)
+        center = auto.WindowControl(searchDepth=1, Name="Notification Center")
+        if not center.Exists(0.2):
+            continue
+        if not app:
+            button = center.ButtonControl(AutomationId="ClearAllButton")
+            if button.Exists(0.5):
+                return button
+            continue
+        wanted = f"clear all notifications for {app.lower()}"
+        for control, _depth in auto.WalkControl(center, maxDepth=12):
+            if control.ControlTypeName == "ButtonControl" and (
+                control.Name or ""
+            ).lower().startswith(wanted):
+                return control
+    return None
+
+
+@tool(
+    "Clear (dismiss) Windows notifications: all of them, or only one app's. The messages "
+    "themselves stay in the app.",
+    {"app": string("Only this app's notifications, e.g. 'WhatsApp'; empty for all")},
+    required=[],
+)
+def dismiss_notifications(app: str = "") -> dict:
+    import uiautomation as auto
+
+    app = APP_NAMES.get(app.strip().lower(), app.strip())
+    button = _clear_button(app)
+    if button is None:
+        auto.SendKeys("{Esc}")
+        return {
+            "cleared": False,
+            "spoken_bn": "মুছে ফেলার মতো কোনো নোটিফিকেশন নেই।",
+            "spoken_en": "There are no notifications to clear.",
+        }
+    button.GetInvokePattern().Invoke()
+    auto.SendKeys("{Esc}")
+    return {
+        "cleared": True,
+        "spoken_bn": f"{app}-এর নোটিফিকেশন মুছে দিলাম।" if app else "সব নোটিফিকেশন মুছে দিলাম।",
+        "spoken_en": f"Cleared the {app} notifications." if app else "Cleared all notifications.",
+    }

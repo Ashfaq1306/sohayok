@@ -89,12 +89,43 @@ NOTIFICATION = re.compile(
     re.IGNORECASE,
 )
 REPLY = re.compile(r"রিপ্লাই|reply|উত্তর (?:দাও|দেও|দিন|পাঠাও|লেখো)|জবাব (?:দাও|দেও)", re.IGNORECASE)
+REMEMBER = re.compile(
+    r"মনে রাখ|মনে রেখ|মনে করে রাখ|মাথায় রাখ|ভুলে যাও|ভুলে যান|\bremember (?:that|this|my)\b|"
+    r"\bforget (?:that|about|my)\b",
+    re.IGNORECASE,
+)
+BRIGHTNESS = re.compile(r"ব্রাইটনেস|ব্রাইটনেছ|ব্রাইট|brightness|উজ্জ্বল|স্ক্রিনের আলো|\bdim\b", re.IGNORECASE)
+DARK = re.compile(
+    r"ডার্ক মোড|ডার্ক থিম|লাইট মোড|লাইট থিম|dark (?:mode|theme)|light (?:mode|theme)", re.IGNORECASE
+)
+PRINTER = re.compile(r"প্রিন্টার|printer", re.IGNORECASE)
+SPECS = re.compile(
+    r"কনফিগারেশন|কনফিগারেসন|configuration|\bspecs?\b|specification|স্পেসিফিকেশন|স্পেক|"
+    r"(?:কোন|কী|কি|কত)\s+(?:প্রসেসর|র‍্যাম|র্যাম|গ্রাফিক্স)|which (?:cpu|processor|graphics)",
+    re.IGNORECASE,
+)
+# Sums are answered by the chat model, not looked up on the web.
+ARITHMETIC = re.compile(
+    r"\d\s*[-+*/x×÷]\s*\d|যোগ কর|বিয়োগ|গুণ কর|গুন কর|ভাগ কর|ভাগ দিলে|দিয়ে ভাগ|দিয়ে গুণ|"
+    r"\b(?:plus|minus|times|multiplied by|divided by|square root)\b",
+    re.IGNORECASE,
+)
 
 
 def keyword_action(text: str) -> Action | None:
     """WhatsApp, calls, notifications, and replies: picked by keyword, as the decider has no
     such actions."""
     text = normalize(text)
+    if REMEMBER.search(text):
+        return Action("কিছু মনে রাখা বা ভুলে যাওয়া", "Remember or forget a fact", ("remember", "forget"))
+    if BRIGHTNESS.search(text):
+        return Action("স্ক্রিনের ব্রাইটনেস", "Screen brightness", ("brightness",))
+    if DARK.search(text):
+        return Action("ডার্ক বা লাইট মোড", "Dark or light mode", ("dark_mode",))
+    if PRINTER.search(text):
+        return Action("প্রিন্টার", "Printers", ("list_printers", "open_settings"))
+    if SPECS.search(text):
+        return Action("পিসির কনফিগারেশন", "PC specifications", ("pc_specs", "system_status"))
     if REPLY.search(text):
         return Action("উত্তর দেওয়া", "Reply to a message", ("whatsapp_reply", "whatsapp_send"))
     if CALL.search(text):
@@ -103,7 +134,12 @@ def keyword_action(text: str) -> Action | None:
         return Action(
             "নোটিফিকেশন বা নতুন মেসেজ",
             "Notifications or new messages",
-            ("read_notifications", "whatsapp_unread", "whatsapp_read_chat"),
+            (
+                "read_notifications",
+                "whatsapp_unread",
+                "whatsapp_read_chat",
+                "dismiss_notifications",
+            ),
         )
     if WHATSAPP.search(text):
         return Action(
@@ -172,10 +208,13 @@ class LiteBrain:
         extra: list[dict] | None = None,
         history: list[dict] | None = None,
     ) -> str:
+        from sohayok.tools.memory import context
+
+        known = context()
         messages = [
             {"role": "system", "content": prompt.format(language=LANGUAGE[language])},
             *(history or []),
-            {"role": "user", "content": user},
+            {"role": "user", "content": f"[{known}]\n{user}" if known else user},
             *(extra or []),
         ]
         return (self._chat(messages).get("content") or "").strip()
@@ -203,6 +242,8 @@ class LiteBrain:
         unsure = decision.probability < self.min_confidence
         if keyword_action(text) is not None:  # actions the decision model was not trained on
             action, unsure = keyword_action(text), False
+        if ARITHMETIC.search(normalize(text)) and keyword_action(text) is None:
+            return Reply(self._say(CHAT_PROMPT, language, text, history=history[-4:]), [], 1)
         if decision.action == "chat" and not unsure:
             return Reply(self._say(CHAT_PROMPT, language, text, history=history[-4:]), [], 1)
         if action is None or not action.tools or unsure:

@@ -62,7 +62,9 @@ ACTIONS: dict[str, Action] = {
         ("set_reminder", "list_reminders", "cancel_reminder"),
     ),
     "note": Action(
-        "কোনো কথা নোট করে রাখা বা লিস্টে যোগ করা", "Save a note or add to a list", ("take_note",)
+        "কোনো কথা নোট করে রাখা বা লিস্টে যোগ করা",
+        "Save a note or add to a list",
+        ("take_note", "remember"),
     ),
     "type": Action("কোনো লেখা টাইপ করা বা লিখে দেওয়া", "Type or write some text", ("type_text",)),
     "keys": Action(
@@ -99,17 +101,24 @@ ACTIONS: dict[str, Action] = {
     "screen": Action(
         "স্ক্রিনে কী আছে দেখা বা কোনো বাটনে ক্লিক করা",
         "See what is on screen or click a button",
-        ("describe_screen", "click_element"),
+        ("describe_screen", "click_element", "use_computer"),
     ),
     "settings": Action(
         "উইন্ডোজ সেটিংস খোলা, যেমন ওয়াইফাই বা ব্লুটুথ",
         "Open Windows settings such as Wi-Fi or Bluetooth",
-        ("open_settings", "bluetooth_power", "wifi_power", "bluetooth_device"),
+        (
+            "open_settings",
+            "bluetooth_power",
+            "wifi_power",
+            "bluetooth_device",
+            "brightness",
+            "dark_mode",
+        ),
     ),
     "system": Action(
         "কম্পিউটারের সিপিইউ, র‍্যাম, জিপিইউ বা ব্যাটারির অবস্থা",
         "Computer status: CPU, RAM, GPU, or battery",
-        ("system_status",),
+        ("system_status", "pc_specs", "list_printers"),
     ),
     "lock": Action("কম্পিউটার লক করা", "Lock the computer", ("lock_screen",)),
     "power": Action(

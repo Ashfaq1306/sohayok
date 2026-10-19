@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ctypes
+import json
 import shutil
 import subprocess
 import time
@@ -212,3 +213,81 @@ def cancel_shutdown() -> str:
         ["shutdown.exe", "/a"], capture_output=True, text=True, creationflags=NO_WINDOW
     )
     return "cancelled the shutdown" if result.returncode == 0 else "no shutdown was pending"
+
+
+SPECS = (
+    "$c=Get-CimInstance Win32_Processor|Select -First 1; $o=Get-CimInstance Win32_OperatingSystem; "
+    "$m=@(Get-CimInstance Win32_PhysicalMemory); $b=Get-CimInstance Win32_BaseBoard; "
+    "[pscustomobject]@{cpu=$c.Name.Trim(); cores=$c.NumberOfCores; "
+    "threads=$c.NumberOfLogicalProcessors; "
+    "ram_gb=[math]::Round(($m|Measure-Object Capacity -Sum).Sum/1GB); "
+    "ram_mhz=($m|Select -First 1).ConfiguredClockSpeed; "
+    "gpu=@(Get-CimInstance Win32_VideoController|% Name); "
+    "board=$b.Manufacturer+' '+$b.Product; "
+    "windows=$o.Caption+' '+(Get-ItemProperty "
+    r"'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion').DisplayVersion; "
+    "disks=@(Get-CimInstance Win32_DiskDrive|%{$_.Model+' '+[math]::Round($_.Size/1GB)+' GB'})}"
+    "|ConvertTo-Json -Compress"
+)
+
+
+def _powershell_json(command: str) -> object:
+    done = subprocess.run(
+        ["powershell", "-NoProfile", "-Command", command],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        creationflags=NO_WINDOW,
+    )
+    if done.returncode != 0 or not done.stdout.strip():
+        raise ToolError(f"Windows did not answer: {done.stderr.strip()[:200]}")
+    return json.loads(done.stdout)
+
+
+@tool(
+    "The PC's full hardware configuration: processor, RAM, graphics cards, motherboard, "
+    "disks, and Windows version. Use for 'what are my PC specs / configuration'."
+)
+def pc_specs() -> dict:
+    specs = _powershell_json(SPECS)
+    gpus = ", ".join(specs.get("gpu") or [])
+    disks = ", ".join(specs.get("disks") or [])
+    specs["spoken_en"] = (
+        f"Your PC has an {specs['cpu']} with {specs['cores']} cores, {specs['ram_gb']} GB of "
+        f"RAM at {specs['ram_mhz']} MHz, graphics {gpus}, an {specs['board']} motherboard, "
+        f"disks {disks}, running {specs['windows']}."
+    )
+    specs["spoken_bn"] = (
+        f"আপনার পিসিতে আছে {specs['cpu']} প্রসেসর, {specs['cores']} কোর; "
+        f"{specs['ram_gb']} জিবি র‍্যাম, {specs['ram_mhz']} মেগাহার্জ; গ্রাফিক্স {gpus}; "
+        f"মাদারবোর্ড {specs['board']}; ডিস্ক {disks}; আর চলছে {specs['windows']}।"
+    )
+    return specs
+
+
+@tool("List the printers, which one is the default, and whether each is connected (online).")
+def list_printers() -> dict:
+    found = _powershell_json(
+        "Get-CimInstance Win32_Printer | Select Name,Default,WorkOffline | ConvertTo-Json -Compress"
+    )
+    printers = found if isinstance(found, list) else [found]
+    virtual = ("pdf", "onenote", "xps", "fax", "anydesk")
+    real = [p for p in printers if not any(v in p["Name"].lower() for v in virtual)]
+    if not real:
+        return {
+            "printers": printers,
+            "spoken_bn": "কোনো প্রিন্টার লাগানো নেই।",
+            "spoken_en": "No printer is set up.",
+        }
+    bn, en = [], []
+    for p in real:
+        online = not p.get("WorkOffline")
+        default_bn = " (ডিফল্ট)" if p.get("Default") else ""
+        default_en = " (default)" if p.get("Default") else ""
+        bn.append(f"{p['Name']}{default_bn} {'কানেক্টেড আছে' if online else 'অফলাইন, কানেক্টেড নেই'}")
+        en.append(f"{p['Name']}{default_en} is {'connected' if online else 'offline'}")
+    return {
+        "printers": printers,
+        "spoken_bn": "। ".join(bn) + "।",
+        "spoken_en": ". ".join(en) + ".",
+    }

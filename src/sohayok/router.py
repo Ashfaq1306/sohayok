@@ -24,7 +24,7 @@ class Intent:
     then: list[tuple[str, dict[str, Any]]] = field(default_factory=list)
 
 
-OPEN = r"(?:খোলো|খুলো|খুলুন|খোল|ওপেন করো|ওপেন করুন|ওপেন কর|চালু করো|চালু করুন|kholo|khulo|khol|open koro|open kor|chalu koro)"
+OPEN = r"(?:খোলো|খুলো|খুলুন|খোল|অন করতো|অন করো|অন কর|ওপেন করতো|ওপেন করো|ওপেন করুন|ওপেন কর|চালু করো|চালু করুন|kholo|khulo|khol|open koro|open kor|chalu koro)"
 CLOSE = r"(?:বন্ধ করো|বন্ধ করুন|বন্ধ কর|ক্লোজ করো|ক্লোজ করুন|কেটে দাও|bondho koro|bondho kor|close koro)"
 PLEASE = r"(?:\s*(?:প্লিজ|please|plz|তো|একটু|ektu))*"
 VOLUME = r"(?:ভলিউম|ভেলিউম|ভলিয়ম|ভোলিউম|ভলিউমটা|সাউন্ড|আওয়াজ|শব্দ|volume|sound|awaj)"
@@ -165,15 +165,65 @@ SHUT = (
 
 
 @rule(
-    rf"(?:(?P<site>.+?)\s+)?{TAB}\s*{SHUT}",
+    rf"(?:(?P<site>.+?)\s+)?{TAB}(?:\s+(?:যা |যেগুলো )?খোলা(?: আছে)?)?(?:\s+সব(?:গুলো|গুলোই)?)?\s*{SHUT}",
     r"close (?:the |this |that )?(?:(?P<site>.+?) )?tab",
 )
 def _close_tab(m, text):
     site = (m.group("site") or "").strip(" ,")
-    if normalize(site) in {"this", "the", "এই", "এটা", "এই ট্যাব"}:
+    every = bool(re.search(r"সব|গুলো|যতগুলো|all\b|every|tabs\b", text))
+    site = re.sub(
+        r"\b(?:all|every|the|my|old|previous)\b|সবগুলো|সব|যতগুলো\S*|পূর্বের|আগের|পুরানো|পুরোনো|"
+        r"খোলা আছে|আছে|ক্রোমে|ক্রমে|chrome",
+        " ",
+        site,
+    )
+    site = re.sub(r"\s+", " ", site).strip(" ,")
+    if normalize(site) in {"", "this", "the", "এই", "এটা", "এই ট্যাব"}:
         site = ""
     reply = {"bn": "ট্যাব বন্ধ করলাম।", "en": "Closed."}
-    return Intent("close_tab", {"name": site}, reply)
+    return Intent("close_tab", {"name": site, "every": every and bool(site)}, reply)
+
+
+# "open Zoom", "zoom meeting": the Zoom app, not zooming in.
+ZOOM_APP = re.compile(r"open|ওপেন|খোলো|খুলো|meeting|মিটিং|\bapp\b|অ্যাপ|কল|call", re.IGNORECASE)
+NOTIFICATIONS = r"(?:নোটিফিকেশন|নোটিফিকেশান|notification)(?:s|গুলো|গুলি|টা|টি)?"
+
+
+@rule(
+    rf"(?:(?:আমার|my)\s+)?(?:(?P<app>\S+?)(?:র|এর|ের|-এর)?\s+)?{NOTIFICATIONS}\s*"
+    r"(?:ক্লিয়ার করো|ক্লিয়ার করে দাও|মুছে দাও|মুছে ফেলো|মুছো|সরাও|সরিয়ে দাও|ক্লোজ করো|বন্ধ করো|"
+    r"কেটে দাও|clear koro)",
+    r"(?:clear|dismiss|close|remove)\s+(?:all\s+)?(?:(?:my|the)\s+)?(?:(?P<app>\w+)\s+)?"
+    r"notifications?",
+)
+def _dismiss_notifications(m, text):
+    app = (m.group("app") or "").strip()
+    if normalize(app) in {"all", "সব", "সবগুলো", "the", "my", "আমার"}:
+        app = ""
+    from sohayok.lang import WHATSAPP
+
+    if re.fullmatch(WHATSAPP, app, re.IGNORECASE):
+        app = "WhatsApp"
+    return Intent("dismiss_notifications", {"app": app}, {"bn": "ঠিক আছে।", "en": "Okay."})
+
+
+@rule(
+    r"(?:.+?\s+)?(?:জুম আউট|zoom out|ছোট করে দেখাও)(?: করো| করে দাও| koro)?",
+)
+def _zoom_out(m, text):
+    if ZOOM_APP.search(text):
+        return None
+    return Intent("press_keys", {"keys": "ctrl+minus"}, {"bn": "ছোট করলাম।", "en": "Zoomed out."})
+
+
+@rule(
+    r"(?:.+?\s+)?(?:জুম ইন|জুম|zoom in|zoom)"
+    r"(?: করো| করে দাও| করে দেখাও| করে তো দেখি| করে দেখি| koro)?",
+)
+def _zoom_in(m, text):
+    if ZOOM_APP.search(text):
+        return None
+    return Intent("press_keys", {"keys": "ctrl+plus"}, {"bn": "বড় করলাম।", "en": "Zoomed in."})
 
 
 @rule(r"(?:close (?:this|the) (?:window|tab|app)|এটা বন্ধ করো|উইন্ডো বন্ধ করো|এই উইন্ডো বন্ধ করো)")
@@ -219,6 +269,8 @@ def _search(m, text):
     query = m.group("q").strip()
     if not query or len(query) < 2 or re.search(r" and | then | তারপর | এবং ", f" {query} "):
         return None
+    if re.search(rf"{OPEN}$|\bopen$|ওপেন$", query):
+        return None  # "Google Chrome ওপেন করো" opens Chrome
     return Intent(
         "web_search", {"query": query, "engine": "google"}, {"bn": "খুঁজছি।", "en": "Searching."}
     )
@@ -423,6 +475,7 @@ def _open(m, text):
         return None
     target = re.sub(r"^(?:the|my|আমার)\s+", "", target)
     target = re.sub(r"\s+(?:app|application|অ্যাপ|অ্যাপটা|টা|টি|ta)$", "", target)
+    target = re.sub(r"(?<=[ঀ-৿]{2})(?:টা|টি|টাকে)$", "", target)  # "ক্রোমটা" -> "ক্রোম"
     key = normalize(target).removesuffix(".com")
     if key.removesuffix(" website").removesuffix(" ওয়েবসাইট") in SITES or re.search(
         r"\.\w{2,}$", target

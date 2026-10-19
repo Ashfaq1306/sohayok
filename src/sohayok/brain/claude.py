@@ -34,8 +34,9 @@ CLAUDE_KEYS = {
 class ComputerUse:
     """Carries out the computer toolset's member tools on the real desktop."""
 
-    def __init__(self) -> None:
+    def __init__(self, max_long_edge: int = MAX_LONG_EDGE) -> None:
         self.scale = 1.0  # screenshot pixels per physical pixel
+        self.max_long_edge = max_long_edge
 
     def _xy(self, coordinate: list[int] | None) -> tuple[int, int] | None:
         if not coordinate:
@@ -45,7 +46,7 @@ class ComputerUse:
     def screenshot_block(self) -> dict[str, Any]:
         from sohayok.tools.screen import grab, png_bytes
 
-        data, self.scale = png_bytes(grab(), MAX_LONG_EDGE)
+        data, self.scale = png_bytes(grab(), self.max_long_edge)
         return {
             "type": "image",
             "source": {
@@ -56,24 +57,26 @@ class ComputerUse:
         }
 
     def run(self, name: str, args: dict[str, Any]) -> list[dict[str, Any]]:
-        from pynput.mouse import Button, Controller
+        from pynput.mouse import Controller
 
         from sohayok import winapi
         from sohayok.tools.screen import grab, png_bytes
 
         mouse = Controller()
+        # Clicks, drags, and scrolls take held keys ("shift", "ctrl+shift") in `text`.
         modifiers = (
             [k for k in str(args.get("text") or "").split("+") if k]
-            if name.endswith("click")
+            if name.endswith(("click", "click_drag")) or name == "scroll"
             else []
         )
+        held = [winapi.vk_for(CLAUDE_KEYS.get(m.lower(), m)) for m in modifiers]
         point = self._xy(args.get("coordinate"))
         if name == "screenshot":
             return [self.screenshot_block()]
         if name == "zoom":
             x0, y0, x1, y1 = args["region"]
             box = tuple(round(v / self.scale) for v in (x0, y0, x1, y1))
-            data, _ = png_bytes(grab().crop(box), MAX_LONG_EDGE)
+            data, _ = png_bytes(grab().crop(box), self.max_long_edge)
             return [
                 {
                     "type": "image",
@@ -89,28 +92,42 @@ class ComputerUse:
             return [
                 {"type": "text", "text": f"X={round(x * self.scale)}, Y={round(y * self.scale)}"}
             ]
-        if point:
+        if point and name != "left_click_drag":
             mouse.position = point
             time.sleep(0.05)
+        for vk in held:
+            winapi._send([winapi._key(vk, False)])
+        try:
+            return self._act(name, args, mouse, point)
+        finally:
+            for vk in reversed(held):
+                winapi._send([winapi._key(vk, True)])
+
+    def _act(self, name: str, args: dict[str, Any], mouse: Any, point: Any) -> list[dict]:
+        from pynput.mouse import Button
+
+        from sohayok import winapi
+
         if name in {"left_click", "right_click", "middle_click", "double_click", "triple_click"}:
             button = {"right_click": Button.right, "middle_click": Button.middle}.get(
                 name, Button.left
             )
             count = {"double_click": 2, "triple_click": 3}.get(name, 1)
-            held = [winapi.vk_for(m) for m in modifiers]
-            for vk in held:
-                winapi._send([winapi._key(vk, False)])
             mouse.click(button, count)
-            for vk in reversed(held):
-                winapi._send([winapi._key(vk, True)])
         elif name == "left_click_drag":
-            start = self._xy(args.get("start_coordinate"))
-            if start:
-                mouse.position = start
+            start = self._xy(args.get("start_coordinate")) or mouse.position
+            end = point or mouse.position
+            mouse.position = start
+            time.sleep(0.05)
             mouse.press(Button.left)
-            time.sleep(0.1)
-            mouse.position = point or mouse.position
-            time.sleep(0.1)
+            # Move in steps: apps like Paint ignore a drag that jumps straight to the end.
+            for i in range(1, 13):
+                mouse.position = (
+                    round(start[0] + (end[0] - start[0]) * i / 12),
+                    round(start[1] + (end[1] - start[1]) * i / 12),
+                )
+                time.sleep(0.015)
+            time.sleep(0.05)
             mouse.release(Button.left)
         elif name == "left_mouse_down":
             mouse.press(Button.left)

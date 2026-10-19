@@ -7,10 +7,13 @@ def load_all() -> Registry:
     from sohayok.tools import (  # noqa: F401
         apps,
         browser,
+        computer,
         devices,
+        display,
         files,
         input,
         media,
+        memory,
         notifications,
         screen,
         shell,

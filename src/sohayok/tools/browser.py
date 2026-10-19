@@ -14,7 +14,7 @@ import httpx
 
 from sohayok.lang import detect_language, normalize
 from sohayok.tools.apps import app_paths_executable
-from sohayok.tools.registry import ToolError, string, tool
+from sohayok.tools.registry import ToolError, boolean, string, tool
 
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -257,30 +257,20 @@ def site_word(name: str) -> str:
     return to_latin(key) if re.search(r"[ঀ-৿]", key) else key
 
 
-@tool(
-    'Close a browser tab by what it shows ("YouTube", "Gmail", a page title), or the '
-    "current tab when no name is given.",
-    {"name": string("Site or page the tab shows; empty for the current tab")},
-    required=[],
-)
-def close_tab(name: str = "") -> dict:
+def _best_tab(word: str) -> tuple[object, object] | None:
     from rapidfuzz import fuzz
 
-    from sohayok import winapi
-
-    if not name.strip():
-        winapi.press("ctrl+w")
-        return {"closed": "current tab", "spoken_bn": "ট্যাব বন্ধ করলাম।", "spoken_en": "Closed."}
-    word = site_word(name)
     best, best_score = None, 0.0
     for window, tab in browser_tabs():
         score = fuzz.partial_ratio(word.lower(), (tab.Name or "").lower())
         if score > best_score:
             best, best_score = (window, tab), score
-    if best is None or best_score < 75:
-        raise ToolError(f"no open browser tab shows {name!r}")
-    window, tab = best
-    title = (tab.Name or "").split(" - ")[0][:60]
+    return best if best_score >= 75 else None
+
+
+def _close(window, tab) -> None:
+    from sohayok import winapi
+
     try:
         tab.GetSelectionItemPattern().Select()
     except Exception:
@@ -288,6 +278,44 @@ def close_tab(name: str = "") -> dict:
     winapi.force_foreground(window.NativeWindowHandle)
     time.sleep(0.25)
     winapi.press("ctrl+w")
+    time.sleep(0.2)
+
+
+@tool(
+    'Close a browser tab by what it shows ("YouTube", "Gmail", a page title), or the '
+    "current tab when no name is given. With every=true, closes all tabs of that site.",
+    {
+        "name": string("Site or page the tab shows; empty for the current tab"),
+        "every": boolean("Close all tabs showing it ('সবগুলো', 'all'), not just one"),
+    },
+    required=[],
+)
+def close_tab(name: str = "", every: bool = False) -> dict:
+    from sohayok import winapi
+
+    if not name.strip():
+        winapi.press("ctrl+w")
+        return {"closed": "current tab", "spoken_bn": "ট্যাব বন্ধ করলাম।", "spoken_en": "Closed."}
+    word = site_word(name)
+    found = _best_tab(word)
+    if found is None:
+        raise ToolError(
+            f"no open browser tab shows {name!r}",
+            spoken_bn=f"{name} এর কোনো ট্যাব খোলা নেই।",
+            spoken_en=f"No {name} tab is open.",
+        )
+    title = (found[1].Name or "").split(" - ")[0][:60]
+    closed = 0
+    while found is not None and closed < 30:
+        _close(*found)
+        closed += 1
+        found = _best_tab(word) if every else None
+    if closed > 1:
+        return {
+            "closed": closed,
+            "spoken_bn": f"{name} এর {closed}টা ট্যাব বন্ধ করলাম।",
+            "spoken_en": f"Closed {closed} {name} tabs.",
+        }
     return {
         "closed": title,
         "spoken_bn": f"“{title}” ট্যাবটা বন্ধ করলাম।",
