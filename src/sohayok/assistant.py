@@ -46,6 +46,10 @@ GREETING = {
 AT_YOUR_SERVICE = {"bn": "জি, বলুন।", "en": "Yes?"}
 DONE = {"bn": "হয়ে গেছে।", "en": "Done."}
 FAILED = {"bn": "দুঃখিত, কাজটা করতে পারিনি।", "en": "Sorry, I couldn't do that."}
+STILL_LOADING = {
+    "bn": "এক মুহূর্ত, আমি এখনও চালু হচ্ছি।",
+    "en": "One moment, I'm still starting up.",
+}
 NOT_HEARD = {"bn": "শুনতে পাইনি, আবার বলুন।", "en": "I didn't catch that. Please say it again."}
 CONFIRM_PROMPT = {"bn": "{q}? হ্যাঁ বা না বলুন।", "en": "{q}. Shall I? Say yes or no."}
 CANCELLED = {"bn": "ঠিক আছে, করলাম না।", "en": "Okay, I won't."}
@@ -93,6 +97,11 @@ class Assistant:
         )
         self.commands: queue.Queue[Command] = queue.Queue()
         self._listening = threading.Lock()
+        # Set once the recognizer has loaded (or failed to); while it loads, commands are
+        # recorded anyway and transcribed when it is ready.
+        self.speech_ready = threading.Event()
+        if transcriber is not None:
+            self.speech_ready.set()
         self._answer_listening = False
         self._worker = threading.Thread(target=self._work, name="assistant", daemon=True)
 
@@ -171,7 +180,8 @@ class Assistant:
         With `answer_only`, the recording is for a pending yes/no question and is discarded
         once that question has been answered some other way.
         """
-        if not (self.transcriber and self.recorder):
+        loading = self.transcriber is None and not self.speech_ready.is_set()
+        if not self.recorder or not (self.transcriber or loading):
             self.emit("error", message="speech recognition is not available")
             return
         if not self._listening.acquire(blocking=False):
@@ -195,6 +205,12 @@ class Assistant:
                 self.set_state("idle")
                 return
             self.set_state("transcribing")
+            if self.transcriber is None:
+                self._wait_for_speech()
+                if self.transcriber is None:
+                    self.emit("error", message="speech recognition is not available")
+                    self.set_state("idle")
+                    return
             heard = self.transcriber.transcribe(audio)
             log.info(
                 "heard %.1f s of audio in %.2f s [%s]: %s",
@@ -264,6 +280,17 @@ class Assistant:
         return answer is True and len(text.split()) <= 4 and len(audio) >= 16_000 * 0.35
 
     # ---- understanding and acting -------------------------------------------------------
+    def _wait_for_speech(self) -> None:
+        """Called Tammy before the recognizer finished loading: say so, then wait for it."""
+        text = STILL_LOADING[self.language]
+        self.emit("reply", text=text, language=self.language)
+        if self.speaker:
+            try:
+                self.speaker.say(text)
+            except Exception:
+                log.exception("speech output failed")
+        self.speech_ready.wait(600)
+
     def reply(self, text: str, language: str) -> None:
         self.emit("reply", text=text, language=language)
         if self.state in {"listening", "transcribing"}:

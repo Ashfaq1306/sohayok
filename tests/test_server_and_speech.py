@@ -275,3 +275,48 @@ def test_wake_listener_reopens_a_lost_microphone(monkeypatch):
     except Done:
         pass
     assert len(opened) == 2 and listener.restarts == 1
+
+
+def test_wake_listener_follows_the_windows_default_microphone(monkeypatch):
+    """Windows briefly switched to the built-in microphone and back; the wake word stayed on
+    the built-in one."""
+    import sounddevice as sd
+
+    from sohayok import wake
+
+    listener = object.__new__(wake.WakeWordListener)
+    listener.name, listener.device, listener.restarts = "tammy", None, 0
+    listener.model = type("M", (), {"reset": lambda self: None})()
+    listener.paused = lambda: False
+    listener.gain, listener.threshold = 1.0, 0.5
+    listener.score = lambda frame: 0.0
+    defaults = iter(["USB", "USB", "Realtek"])
+    opened = []
+
+    class Stream:
+        device = 1
+
+        def __init__(self, **kwargs):
+            opened.append(kwargs["device"])
+            if len(opened) > 1:
+                raise KeyboardInterrupt  # stop the test once the stream is reopened
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def read(self, n):
+            return np.zeros((n, 1), np.int16), False
+
+    monkeypatch.setattr(sd, "InputStream", Stream)
+    monkeypatch.setattr(sd, "query_devices", lambda d: {"name": "USB"})
+    monkeypatch.setattr(sd, "_terminate", lambda: None)
+    monkeypatch.setattr(sd, "_initialize", lambda: None)
+    monkeypatch.setattr(wake, "default_microphone", lambda: next(defaults))
+    try:
+        listener.run()
+    except KeyboardInterrupt:
+        pass
+    assert len(opened) == 2 and listener.restarts == 1

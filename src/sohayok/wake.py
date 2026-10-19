@@ -21,6 +21,28 @@ import numpy as np
 log = logging.getLogger(__name__)
 FRAME = 1280  # 80 ms at 16 kHz, openWakeWord's frame size
 BUILT_IN = {"hey_jarvis": "hey jarvis", "alexa": "alexa", "hey_mycroft": "hey mycroft"}
+CHECK_DEVICE_EVERY = 25  # frames (2 s)
+
+
+class MicrophoneChanged(Exception):
+    """Windows switched its default microphone; reopen the stream on the new one."""
+
+
+def default_microphone() -> str:
+    """Name of Windows' current default microphone ("" if unknown)."""
+    try:
+        import comtypes
+        from pycaw.constants import CLSID_MMDeviceEnumerator
+        from pycaw.pycaw import AudioUtilities, EDataFlow, ERole, IMMDeviceEnumerator
+
+        comtypes.CoInitialize()
+        enumerator = comtypes.CoCreateInstance(
+            CLSID_MMDeviceEnumerator, IMMDeviceEnumerator, comtypes.CLSCTX_INPROC_SERVER
+        )
+        device = enumerator.GetDefaultAudioEndpoint(EDataFlow.eCapture.value, ERole.eConsole.value)
+        return AudioUtilities.CreateDevice(device).FriendlyName or ""
+    except Exception:
+        return ""
 
 
 def resolve_wake_model(setting: str) -> tuple[str, str]:
@@ -140,9 +162,13 @@ class WakeWordListener:
             try:
                 self._listen(self.device if failures < 2 else None)
             except Exception as error:
-                failures = 1 if time.monotonic() - started > 60 else failures + 1
-                log.warning("microphone failed (%s); reopening it", error)
-                time.sleep(min(10.0, 1.0 * failures))
+                if isinstance(error, MicrophoneChanged):
+                    log.info("Windows switched the microphone to %s", error)
+                    failures = 0
+                else:
+                    failures = 1 if time.monotonic() - started > 60 else failures + 1
+                    log.warning("microphone failed (%s); reopening it", error)
+                    time.sleep(min(10.0, 1.0 * failures))
                 try:  # PortAudio lists devices once; refresh it to see the current ones
                     sd._terminate()
                     sd._initialize()
@@ -158,13 +184,22 @@ class WakeWordListener:
         with sd.InputStream(
             samplerate=16_000, channels=1, dtype="int16", blocksize=FRAME, device=device
         ) as stream:
+            windows_default = default_microphone() if device is None else ""
             if self.restarts:
                 log.info("microphone open again: %s", sd.query_devices(stream.device)["name"])
             cooldown = 0.0
+            frames = 0
             while True:
                 frame, _ = stream.read(FRAME)
                 frame = self._boost(frame[:, 0])
                 recent.append(frame)
+                frames += 1
+                if device is None and frames % CHECK_DEVICE_EVERY == 0 and not self.paused():
+                    # Follow Windows' default microphone: it can switch (and switch back)
+                    # without the old stream failing, leaving the wake word on the wrong one.
+                    current = default_microphone()
+                    if current and windows_default and current != windows_default:
+                        raise MicrophoneChanged(current)
                 if self.paused() or time.monotonic() < cooldown:
                     continue
                 score = self.score(frame)

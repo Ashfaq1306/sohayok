@@ -155,6 +155,43 @@ def test_voice_command_flows_from_microphone_to_action():
     assert [e["state"] for e in events if e["type"] == "state"][:2] == ["listening", "transcribing"]
 
 
+def test_command_said_while_speech_loads_is_kept():
+    """Calling Tammy before the recognizer finished loading said "not available"."""
+    import threading
+
+    calls = []
+
+    class Recorder:
+        def record(self):
+            return np.ones(16_000, dtype=np.float32)
+
+        def stop(self):
+            pass
+
+    class Transcriber:
+        def transcribe(self, audio):
+            return Transcript("ভলিউম বাড়াও", "bn", 0.97, 0.2)
+
+    assistant, events = _assistant(FakeBrain(), calls)
+    assistant.recorder = Recorder()
+    assistant.start(greet=False)
+
+    def finish_loading():
+        time.sleep(0.2)
+        assistant.transcriber = Transcriber()
+        assistant.speech_ready.set()
+
+    threading.Thread(target=finish_loading).start()
+    assistant.listen_once()
+    for _ in range(100):
+        if calls:
+            break
+        time.sleep(0.02)
+    assert calls == [("volume", {"action": "up", "level": 10})]
+    assert not any(e["type"] == "error" for e in events)
+    assert any(e["type"] == "reply" and "চালু হচ্ছি" in e["text"] for e in events)
+
+
 def test_spoken_confirmations_must_be_clear():
     speech = np.ones(16_000, dtype=np.float32)
     assert Assistant._clear_answer("হ্যাঁ", speech)

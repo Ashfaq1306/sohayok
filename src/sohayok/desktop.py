@@ -166,6 +166,7 @@ def _warm(brain: Any) -> None:
 def load_speech(assistant: Assistant, config: Config, info: dict[str, str]) -> None:
     """Load the recognizer in the background; voice input turns on when it is ready."""
     from sohayok.audio import Recorder
+    from sohayok.gpu import priority
     from sohayok.stt import Transcriber
 
     speech = config.speech
@@ -183,27 +184,36 @@ def load_speech(assistant: Assistant, config: Config, info: dict[str, str]) -> N
                 assistant.emit("level", value=round(value, 4))
 
         recorder.on_level = level
-        transcriber = Transcriber(
-            speech.whisper_model,
-            speech.bangla_model,
-            speech.device,
-            speech.compute_type,
-            speech.beam_size,
-            speech.languages,
-            speech.language_detector,
-        )
-        transcriber.gpu_priority = speech.gpu_priority
-        # Compile GPU kernels now, not on the first command.
-        import numpy as np
+        # Commands can be recorded while the models load; they are transcribed when ready.
+        assistant.recorder = recorder
+        # Loading onto a GPU that another program keeps at 100% took 4+ minutes at normal
+        # priority.
+        with priority(speech.gpu_priority):
+            transcriber = Transcriber(
+                speech.whisper_model,
+                speech.bangla_model,
+                speech.device,
+                speech.compute_type,
+                speech.beam_size,
+                speech.languages,
+                speech.language_detector,
+            )
+            transcriber.gpu_priority = speech.gpu_priority
+            # Compile GPU kernels now, not on the first command.
+            import numpy as np
 
-        transcriber.transcribe(np.zeros(16_000, dtype=np.float32), "en")
-        assistant.recorder, assistant.transcriber = recorder, transcriber
+            transcriber.transcribe(np.zeros(16_000, dtype=np.float32), "en")
+        assistant.transcriber = transcriber
         info["stt"] = "voice ready"
-        assistant.emit("ready", stt=info["stt"], seconds=round(time.monotonic() - started, 1))
+        seconds = round(time.monotonic() - started, 1)
+        log.info("speech recognition ready in %.1f s", seconds)
+        assistant.emit("ready", stt=info["stt"], seconds=seconds)
     except Exception as exc:
         log.exception("speech recognition failed to load")
         info["stt"] = "voice unavailable"
         assistant.emit("error", message=f"speech recognition unavailable: {exc}")
+    finally:
+        assistant.speech_ready.set()
 
 
 def start_hotkey(combo: str, activate: Callable[[], None]) -> Any:
