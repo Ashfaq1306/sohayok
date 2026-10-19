@@ -302,6 +302,50 @@ def _call(m, text):
     )
 
 
+BT = r"(?:ব্লুটুথ|ব্লুটুথটা|ব্লু টুথ|bluetooth)"
+WIFI = r"(?:ওয়াইফাই|ওয়াই ফাই|ওয়াইফাইটা|wi-?fi|wifi)"
+ON = r"(?:অন করো|অন কর|চালু করো|চালু কর|অন করে দাও|চালু করে দাও|on koro|chalu koro)"
+OFF = r"(?:অফ করো|অফ কর|বন্ধ করো|বন্ধ কর|অফ করে দাও|বন্ধ করে দাও|off koro|bondho koro)"
+
+
+@rule(
+    rf"{BT}\s*{ON}",
+    rf"{BT}\s*{OFF}",
+    r"turn (?:on|off) (?:the )?bluetooth",
+    r"turn (?:the )?bluetooth (?:on|off)",
+    r"bluetooth (?:on|off)",
+)
+def _bluetooth(m, text):
+    on = not re.search(r"অফ|বন্ধ|off|bondho", text)
+    return Intent("bluetooth_power", {"on": on}, {"bn": "ঠিক আছে।", "en": "Okay."})
+
+
+@rule(
+    rf"{WIFI}\s*{ON}",
+    rf"{WIFI}\s*{OFF}",
+    r"turn (?:on|off) (?:the )?wi-?fi",
+    r"turn (?:the )?wi-?fi (?:on|off)",
+    r"wi-?fi (?:on|off)",
+)
+def _wifi(m, text):
+    on = not re.search(r"অফ|বন্ধ|off|bondho", text)
+    return Intent("wifi_power", {"on": on}, {"bn": "ঠিক আছে।", "en": "Okay."})
+
+
+@rule(
+    r"(?P<d>.+?)(?:টা|টি|কে)?\s+(?P<a>ডিসকানেক্ট|disconnect|কানেক্ট|connect)\s*(?:করো|কর|করে দাও|koro)",
+    r"(?P<a>disconnect|connect)(?: to)? (?:my |the )?(?P<d>.+)",
+)
+def _bluetooth_device(m, text):
+    device = m.group("d").strip(" ,")
+    if not device or len(device.split()) > 4 or re.search(rf"{WIFI}|ইন্টারনেট|internet", device):
+        return None
+    action = "disconnect" if re.search(r"ডিস|dis", m.group("a")) else "connect"
+    return Intent(
+        "bluetooth_device", {"device": device, "action": action}, {"bn": "ঠিক আছে।", "en": "Okay."}
+    )
+
+
 def _place(target: str):
     """A drive, shell place, or known folder named in a command (with or without "-এ")."""
     from sohayok.tools.files import drive, known_folder, shell_place

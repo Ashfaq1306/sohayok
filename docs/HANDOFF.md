@@ -60,7 +60,7 @@ bench/       stt, brain, voice, wake benchmarks; docs/benchmarks.md has the numb
 
 ## Verified
 
-- 181 unit tests pass (`uv run pytest -q`); read-only desktop checks pass.
+- 187 unit tests pass (`uv run pytest -q`); read-only desktop checks pass.
 - Typed commands: 91.4% right action (Laya + qwen3.5:2b), Bangla 90.8%.
 - Speech: Bangla FLEURS 21.6% WER; spoken commands 15.9% (Bangla), 9.9% (English); quiet
   mic as good as normal.
@@ -69,6 +69,23 @@ bench/       stt, brain, voice, wake benchmarks; docs/benchmarks.md has the numb
   বাড়াও", "আমি আসলে জানতে চাচ্ছি যে কাইনেটিক এনার্জি…"); the detector fired on their
   "Tammy" but Whisper heard "Demi" and refused, now fixed (accepted spellings + instant
   wake). **Not yet confirmed with their voice after the fix.**
+- Round 4 (2026-10-19 evening, after a full day of use):
+  - The other project's 13 processes also kept the CPU at 97%: the decider took 1.3-4.8 s.
+    Sohayok now runs at high CPU priority (`assistant.cpu_priority`): 0.23 s.
+  - Short English ("Yes" -> "ইয়েস") is checked with Whisper; English commands 31/31.
+  - Commands end after 1.2 s of silence (the user was cut off at 0.7 s).
+  - Replies are spoken sentence by sentence: first word after 1.1 s instead of 5.3 s for a
+    150-character answer (`tts.sentences`).
+  - New: Bluetooth / Wi-Fi on-off and connecting a device by name or kind
+    (`tools/devices.py`; the device picker was checked against the user's real Settings page:
+    JBL Charge 5 connected, Sony WF-1000XM5 paired; nothing was switched); reading Windows
+    notifications from the local notification database (`tools/notifications.py`, checked on
+    the real database without printing contents); WhatsApp reply / unread / read chat.
+  - WhatsApp search now tries English spellings first ("পিয়াস ভাই" -> pias, piyas, …);
+    WhatsApp is still **not signed in** on this PC, and its tools say so before asking.
+  - Tools can raise `ToolError(..., spoken_bn=, spoken_en=)` and declare a `check` run before
+    the confirmation question.
+  - "Jarvis" spellings are accepted by the wake check (the user started calling it that).
 - Round 3 (2026-10-19, after the user's second real session):
   - Their speech mixes English words into Bangla; recognition order changed to Bangla model
     first (docs/benchmarks.md, "Update 2"). Their real commands: 9 of 9 right language.
@@ -121,8 +138,11 @@ bench/       stt, brain, voice, wake benchmarks; docs/benchmarks.md has the numb
 ## Next steps, in order
 
 1. **WhatsApp:** once the user has signed WhatsApp in, inspect its window (search box,
-   chat list items, message box, call buttons) and test `whatsapp_open_chat` live; test
-   sending only with the user's go-ahead (their own "Message yourself" chat).
+   chat list items and their unread text, "message-in"/"message-out" rows, message box,
+   call buttons) and test `whatsapp_open_chat`, `whatsapp_unread`, `whatsapp_read_chat`
+   live; test sending only with the user's go-ahead (their own "Message yourself" chat).
+   The control names in `tools/whatsapp.py` are WhatsApp Web's and are unverified.
+   Also ask what the user meant by controlling the "fan".
 2. **Try "Tammy" and commands with the real voice.** The log now has `heard … in … s` and
    `handled in … s` lines per command; replay wake clips with `python -m sohayok.bench.wake_user`
    and commands with `python -m sohayok.bench.dry_run`.

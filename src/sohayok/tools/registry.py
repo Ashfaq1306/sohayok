@@ -19,7 +19,21 @@ class Risk(enum.Enum):
 
 
 class ToolError(Exception):
-    """A failure the model should see and explain to the user (not a crash)."""
+    """A failure the model should see and explain to the user (not a crash).
+
+    `spoken_bn` / `spoken_en` are ready sentences for the user ("WhatsApp is not signed in…"),
+    said as they are instead of a generic "couldn't do that".
+    """
+
+    def __init__(self, message: str, spoken_bn: str = "", spoken_en: str = "") -> None:
+        super().__init__(message)
+        self.spoken_bn, self.spoken_en = spoken_bn, spoken_en
+
+    def result(self) -> str:
+        if not (self.spoken_bn or self.spoken_en):
+            return f"error: {self}"
+        spoken = {"error": str(self), "spoken_bn": self.spoken_bn, "spoken_en": self.spoken_en}
+        return "error: " + json.dumps(spoken, ensure_ascii=False)
 
 
 @dataclass
@@ -31,6 +45,9 @@ class Tool:
     risk: Risk = Risk.SAFE
     # What will happen, in the user's language ("bn"/"en"); asked before CONFIRM tools run.
     summary: Callable[[dict[str, Any], str], str] | None = None
+    # Raises ToolError if the tool cannot run now (e.g. WhatsApp signed out); checked before
+    # the user is asked to confirm.
+    check: Callable[[dict[str, Any]], None] | None = None
 
     def describe(self, args: dict[str, Any], language: str = "en") -> str:
         if self.summary:
@@ -70,7 +87,7 @@ class Registry:
             accepted = _filter_args(tool, args)
             result = tool.func(**accepted)
         except ToolError as exc:
-            return f"error: {exc}"
+            return exc.result()
         except Exception as exc:  # a broken tool must not kill the assistant
             log.exception("tool %s failed", name)
             return f"error: {type(exc).__name__}: {exc}"
@@ -107,6 +124,7 @@ def tool(
     risk: Risk = Risk.SAFE,
     summary: Callable[[dict[str, Any], str], str] | None = None,
     name: str | None = None,
+    check: Callable[[dict[str, Any]], None] | None = None,
     registry: Registry = REGISTRY,
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """Register a function as a tool. `params` maps argument name to a JSON-schema fragment."""
@@ -118,7 +136,7 @@ def tool(
         if needed is None:
             needed = [n for n, p in signature.parameters.items() if p.default is p.empty]
         schema = {"type": "object", "properties": params, "required": needed}
-        registry.add(Tool(name or func.__name__, description, schema, func, risk, summary))
+        registry.add(Tool(name or func.__name__, description, schema, func, risk, summary, check))
         return func
 
     return decorator

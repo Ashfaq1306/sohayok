@@ -74,6 +74,13 @@ like "-ের"/"-টা") is English written in Bangla letters and is redone in 
 
 107 of 117 clips need one decoding pass, 10 need two.
 
+**CPU priority.** The same jobs also kept the CPU at 97%. At normal priority the decision
+model took 1.3–1.8 s (up to 4.8 s) and the language classifier 130–260 ms; at high priority
+0.23 s and 26 ms. Sohayok now runs at high CPU priority (`assistant.cpu_priority`).
+
+**Speaking.** A 150-character answer took 5.3 s to synthesize before its first word; replies
+are now synthesized sentence by sentence while the previous one plays: first word after 1.1 s.
+
 **GPU priority.** With other training jobs keeping the GPU at 100%, recognising a 2 s command
 took 18 s at normal Windows GPU priority, 13 s at high, and 3.4 s at real-time (`sohayok.gpu`);
 in the end-to-end run below (training still running) the median was 0.45 s. Sohayok raises

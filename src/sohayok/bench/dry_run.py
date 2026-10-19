@@ -56,6 +56,15 @@ CASES = [
     ("take a screenshot", EN_IN, {"take_screenshot"}),
     ("mute the sound", EN_US, {"volume"}),
     ("open Chrome", EN_IN, {"open_app"}),
+    ("ব্লুটুথ অফ করো", BN, {"bluetooth_power"}),
+    ("জেবিএল স্পিকারটা ডিসকানেক্ট করো", BN2, {"bluetooth_device"}),
+    ("নোটিফিকেশনে কী আছে", BN, {"read_notifications"}),
+    ("পিয়াস ভাইকে হোয়াটসঅ্যাপে কল দাও", BN2, {"whatsapp_call"}),
+    ("রিপ্লাই দাও আমি দশ মিনিটে আসছি", BN, {"whatsapp_reply"}),
+    ("turn off bluetooth", EN_IN, {"bluetooth_power"}),
+    ("disconnect my headphones", EN_US, {"bluetooth_device"}),
+    ("read my new messages", EN_US, {"read_notifications", "whatsapp_unread"}),
+    ("reply that I am coming", EN_IN, {"whatsapp_reply"}),
 ]
 # The user's own recordings (2026-10-19), with what they asked for.
 USER = {
@@ -88,7 +97,7 @@ def dry_registry():
             calls.append({"name": _name, "args": args})
             return {"ok": True, "spoken_bn": "ঠিক আছে।", "spoken_en": "Done."}
 
-        registry.add(dataclasses.replace(tool, func=record))
+        registry.add(dataclasses.replace(tool, func=record, check=None))
     return registry, calls
 
 
@@ -96,10 +105,12 @@ def main() -> None:
     from sohayok.assistant import Assistant, Command
     from sohayok.config import current
     from sohayok.desktop import build_lite
+    from sohayok.gpu import set_cpu_priority
     from sohayok.stt import Transcriber
     from sohayok.training.wake_word import tts
 
     config = current()
+    set_cpu_priority(config.assistant.cpu_priority)
     config.assistant.confirm_risky_actions = False  # dry run: nothing real happens anyway
     if len(sys.argv) > 2:  # compare answer models: python -m sohayok.bench.dry_run out.json MODEL
         config.brain.lite_model = sys.argv[2]

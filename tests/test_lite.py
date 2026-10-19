@@ -47,7 +47,9 @@ def test_every_tool_belongs_to_one_action():
     assert set(TOOL_ACTION) <= names
     from sohayok.brain.lite import keyword_action
 
-    by_keyword = set(keyword_action("whatsapp").tools) | set(keyword_action("call x").tools)
+    by_keyword = set()
+    for text in ("whatsapp", "call x", "notification", "reply ok"):
+        by_keyword |= set(keyword_action(text).tools)
     others = {"find_apps", "move_mouse", "click", "scroll", "ask_claude_code"}
     missing = names - set(TOOL_ACTION) - others - by_keyword
     assert not missing, missing

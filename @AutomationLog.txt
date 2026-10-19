@@ -1,0 +1,2 @@
+2026-10-19 20:55:14.315 <stdin>[6] <genexpr> -> Find Control Timeout(10s): {AutomationId: 'RootWebArea', ControlType: DocumentControl}
+2026-10-19 21:03:05.391 <stdin>[7] <module> -> Find Control Timeout(10s): {Name: 'Windows Shell Experience Host', ControlType: WindowControl}

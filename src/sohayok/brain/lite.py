@@ -82,22 +82,48 @@ CALL = re.compile(
 )
 
 
+NOTIFICATION = re.compile(
+    r"নোটিফিকেশন|notification|(?:কী|কি|কোন|নতুন|কার|কে) (?:মেসেজ|ম্যাসেজ|message)|(?:মেসেজ|ম্যাসেজ) এসেছে|"
+    r"(?:মেসেজ|ম্যাসেজ|message)(?:টা|টি)? (?:কী|কি|পড়ো|পড়|পড়ে শোনাও|শোনাও|read)|"
+    r"(?:new|unread|latest) messages?|read (?:my |the )?messages?",
+    re.IGNORECASE,
+)
+REPLY = re.compile(r"রিপ্লাই|reply|উত্তর (?:দাও|দেও|দিন|পাঠাও|লেখো)|জবাব (?:দাও|দেও)", re.IGNORECASE)
+
+
 def keyword_action(text: str) -> Action | None:
-    """WhatsApp messages and calls: picked by keyword, as the decider has no such action."""
+    """WhatsApp, calls, notifications, and replies: picked by keyword, as the decider has no
+    such actions."""
     text = normalize(text)
+    if REPLY.search(text):
+        return Action("উত্তর দেওয়া", "Reply to a message", ("whatsapp_reply", "whatsapp_send"))
     if CALL.search(text):
         return Action("হোয়াটসঅ্যাপে কল", "WhatsApp call", ("whatsapp_call",))
+    if NOTIFICATION.search(text):
+        return Action(
+            "নোটিফিকেশন বা নতুন মেসেজ",
+            "Notifications or new messages",
+            ("read_notifications", "whatsapp_unread", "whatsapp_read_chat"),
+        )
     if WHATSAPP.search(text):
         return Action(
             "হোয়াটসঅ্যাপ",
             "WhatsApp",
-            ("whatsapp_send", "whatsapp_open_chat", "whatsapp_call"),
+            (
+                "whatsapp_send",
+                "whatsapp_open_chat",
+                "whatsapp_call",
+                "whatsapp_read_chat",
+                "whatsapp_unread",
+            ),
         )
     return None
 
 
 def _prepared_reply(result: str, language: str) -> str:
     """Tools such as weather return a ready sentence ("spoken_bn"/"spoken_en")."""
+    if result.startswith("error: {"):
+        result = result.removeprefix("error: ")
     if not result.startswith("{"):
         return ""
     try:
@@ -194,7 +220,8 @@ class LiteBrain:
         result = executor.run(name, args)
         calls = [{"name": name, "args": args, "result": result}]
         if result.startswith(("error", "cancelled")):
-            return Reply("", calls, 2)  # the assistant explains failures and cancellations
+            # a tool that phrased its failure is said as is; others the assistant explains
+            return Reply(_prepared_reply(result, language), calls, 2)
         spoken = _prepared_reply(result, language)
         if spoken:  # the tool already phrased its result (exact numbers, where a folder went)
             return Reply(spoken, calls, 2)

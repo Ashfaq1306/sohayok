@@ -104,7 +104,7 @@ ACTIONS: dict[str, Action] = {
     "settings": Action(
         "উইন্ডোজ সেটিংস খোলা, যেমন ওয়াইফাই বা ব্লুটুথ",
         "Open Windows settings such as Wi-Fi or Bluetooth",
-        ("open_settings",),
+        ("open_settings", "bluetooth_power", "wifi_power", "bluetooth_device"),
     ),
     "system": Action(
         "কম্পিউটারের সিপিইউ, র‍্যাম, জিপিইউ বা ব্যাটারির অবস্থা",

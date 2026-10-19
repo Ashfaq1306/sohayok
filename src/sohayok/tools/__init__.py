@@ -7,9 +7,11 @@ def load_all() -> Registry:
     from sohayok.tools import (  # noqa: F401
         apps,
         browser,
+        devices,
         files,
         input,
         media,
+        notifications,
         screen,
         shell,
         system,

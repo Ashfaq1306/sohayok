@@ -155,3 +155,91 @@ def test_mixed_bangla_rules_on_real_mistakes():
     # English the Bangla model wrote phonetically, with a Bangla-looking ending
     assert not has_bangla_grammar("ওয়ের এস ভলিউম সেটিং")
     assert has_bangla_grammar("ইউটিউবের ট্যাবটা")
+
+
+def test_whatsapp_searches_english_spellings_first():
+    from sohayok.tools.whatsapp import MATCH, name_score, search_queries
+
+    queries = search_queries("পিয়াস ভাই")
+    assert queries[0] in {"pias", "piyas"} and "piyas" in queries  # not "ভাই", Latin first
+    assert search_queries("পি আশ ভাই")[0] == "piash"  # a name the recognizer split
+    assert "piyas" in search_queries("পিয়াজ ভাইয়ে")  # জ heard for স
+    for said, saved in [
+        ("পিয়াস ভাই", "Pias Vai"),
+        ("পিয়াজ ভাইয়ে", "Piyas Bhai"),
+        ("পিয়াজ ভাইয়ে", "Pias Vai"),
+    ]:  # the user's real contact and mishearing
+        assert name_score(said, saved) >= MATCH
+    assert name_score("পিয়াস ভাই", "Rakib Bhai") < MATCH
+
+
+def test_keyword_routes_for_messages():
+    from sohayok.brain.lite import keyword_action
+
+    assert keyword_action("নোটিফিকেশনে কী আছে").tools[0] == "read_notifications"
+    assert keyword_action("হোয়াটসঅ্যাপে কার মেসেজ এসেছে").tools[0] == "read_notifications"
+    assert keyword_action("রিপ্লাই দাও আমি আসছি").tools[0] == "whatsapp_reply"
+    assert keyword_action("ওয়াটস্যাপ থেকে পিয়াস ভাইকে ফোন দাও").tools == ("whatsapp_call",)
+
+
+def test_signed_out_whatsapp_is_explained_before_asking(monkeypatch):
+    from sohayok.safety import ConfirmationBroker, Executor
+    from sohayok.tools import load_all, whatsapp
+
+    def signed_out(args):
+        raise whatsapp.NOT_SIGNED_IN
+
+    registry = load_all()
+    monkeypatch.setattr(registry.get("whatsapp_call"), "check", signed_out)
+    broker = ConfirmationBroker(1)
+    asked = []
+    broker.ask = lambda question, language: asked.append(question) or True
+    result = Executor(registry, broker).run("whatsapp_call", {"contact": "রহিম"})
+    assert asked == [] and result.startswith("error: {")
+    from sohayok.brain.lite import _prepared_reply
+
+    assert "লগইন" in _prepared_reply(result, "bn")
+
+
+def test_bluetooth_and_device_commands():
+    cases = [
+        ("ব্লুটুথ অফ করো", "bluetooth_power", {"on": False}),
+        ("turn on bluetooth", "bluetooth_power", {"on": True}),
+        (
+            "জেবিএল স্পিকারটা ডিসকানেক্ট করো",
+            "bluetooth_device",
+            {"device": "জেবিএল স্পিকার", "action": "disconnect"},
+        ),
+        ("connect to my earbuds", "bluetooth_device", {"device": "earbuds", "action": "connect"}),
+    ]
+    for text, tool, args in cases:
+        intent = route(text)
+        assert (intent.tool, intent.args) == (tool, args), text
+
+
+def test_picking_a_bluetooth_device():
+    from sohayok.tools.devices import pick_device
+
+    class Button:
+        def __init__(self, name):
+            self.Name = name
+
+    cards = [
+        ("JBL Charge 5", "speakers, battery unknown, state connected", Button("Disconnect")),
+        ("WF-1000XM5", "communications device, state not connected", Button("Connect")),
+    ]
+    assert pick_device(cards, "জেবিএল স্পিকার", "disconnect")[0] == "JBL Charge 5"
+    assert pick_device(cards, "হেডফোন", "connect")[0] == "WF-1000XM5"
+    assert pick_device(cards, "Sony", "connect")[0] == "WF-1000XM5"
+    assert pick_device(cards, "headphones", "disconnect") is None  # not connected
+
+
+def test_notification_payloads():
+    from sohayok.tools.notifications import app_name, toast_lines
+
+    xml = (
+        "<toast><visual><binding template='ToastGeneric'><text>Piyas Bhai</text>"
+        "<text>আসছো?</text></binding></visual></toast>"
+    )
+    assert toast_lines(xml) == ["Piyas Bhai", "আসছো?"]
+    assert app_name("5319275A.WhatsAppDesktop_cv1g1gvanyjgm!App") == "WhatsApp"

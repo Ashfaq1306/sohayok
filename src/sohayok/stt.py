@@ -398,7 +398,12 @@ class Transcriber:
             if dict(probs).get("en", 0.0) >= 0.9:
                 return self.multi.transcribe(audio, "en"), "en", 0.9
         bangla = self.bangla.transcribe(audio, "bn")
-        if not bangla.strip() or has_bangla_grammar(bangla):
+        if not bangla.strip() or has_bangla_grammar(bangla, short_is_bangla=False):
             return bangla, "bn", sure
+        if len(clean(bangla).split()) <= 2:
+            # "ইয়েস", "স্টপ": too short for grammar; Whisper hears whether it was English
+            _, _, probs = self.multi.model.detect_language(audio)
+            if dict(probs).get("en", 0.0) < 0.5:
+                return bangla, "bn", sure
         english = self.multi.transcribe(audio, "en")
         return (english, "en", 0.5) if clean(english) else (bangla, "bn", 0.5)

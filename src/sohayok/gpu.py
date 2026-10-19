@@ -36,6 +36,24 @@ def set_priority(level: str) -> bool:
     return status == 0
 
 
+def set_cpu_priority(level: str) -> bool:
+    """Set this process's CPU priority class ("normal", "above_normal", "high")."""
+    import psutil
+
+    classes = {
+        "normal": psutil.NORMAL_PRIORITY_CLASS,
+        "above_normal": psutil.ABOVE_NORMAL_PRIORITY_CLASS,
+        "high": psutil.HIGH_PRIORITY_CLASS,
+    }
+    if level not in classes:
+        return False
+    try:
+        psutil.Process().nice(classes[level])
+    except (psutil.Error, OSError):
+        return False
+    return True
+
+
 @contextlib.contextmanager
 def priority(level: str = "realtime") -> Iterator[None]:
     """Raise the GPU priority for the duration of the block (nested blocks are fine)."""

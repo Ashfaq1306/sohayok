@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from sohayok.lang import normalize, strip_punctuation
-from sohayok.tools.registry import Registry, Risk
+from sohayok.tools.registry import Registry, Risk, ToolError
 
 YES = {
     "yes",
@@ -152,6 +152,13 @@ class Executor:
 
     def run(self, name: str, args: dict[str, Any]) -> str:
         tool = self.registry.get(name)
+        if tool is not None and tool.check is not None:
+            try:
+                tool.check(args)
+            except ToolError as exc:  # can't run now: say why instead of asking first
+                result = exc.result()
+                self.on_tool(name, args, result)
+                return result
         if tool is not None and tool.risk is Risk.CONFIRM and self.confirm:
             if not self.broker.ask(tool.describe(args, self.language), self.language):
                 result = (

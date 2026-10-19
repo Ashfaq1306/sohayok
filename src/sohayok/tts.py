@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import io
 import logging
+import queue
+import re
 import threading
 
 import numpy as np
@@ -33,6 +35,25 @@ def synthesize_edge(text: str, voice: str, rate: str = "+0%") -> tuple[np.ndarra
     if samples.ndim > 1:
         samples = samples.mean(axis=1)
     return samples, rate_hz
+
+
+SENTENCE_END = re.compile(r"(?<=[।.!?])\s+")
+
+
+def sentences(text: str, shortest: int = 25) -> list[str]:
+    """Split a reply into sentences, joining very short ones ("জি!") to the next."""
+    parts, current = [], ""
+    for piece in SENTENCE_END.split(text.strip()):
+        current = f"{current} {piece}".strip()
+        if len(current) >= shortest:
+            parts.append(current)
+            current = ""
+    if current:
+        if parts and len(current) < shortest:
+            parts[-1] = f"{parts[-1]} {current}"
+        else:
+            parts.append(current)
+    return parts
 
 
 class Speaker:
@@ -69,12 +90,30 @@ class Speaker:
             self.stop_event.clear()
             self.speaking.set()
             try:
-                try:
-                    samples, rate = self.synthesize(text)
-                except Exception:
-                    self._say_offline(text)
-                    return
-                play(samples, rate, self.stop_event)
+                # Speak the first sentence as soon as it is ready and prepare the rest while it
+                # plays: a 150-character answer waited 5.3 s for its first word otherwise.
+                parts = sentences(text)
+                ready: queue.Queue = queue.Queue()
+
+                def produce() -> None:
+                    for part in parts:
+                        if self.stop_event.is_set():
+                            break
+                        try:
+                            ready.put(self.synthesize(part))
+                        except Exception:
+                            ready.put(part)  # spoken offline instead
+                    ready.put(None)
+
+                threading.Thread(target=produce, name="tts", daemon=True).start()
+                while not self.stop_event.is_set():
+                    item = ready.get()
+                    if item is None:
+                        break
+                    if isinstance(item, str):
+                        self._say_offline(item)
+                    else:
+                        play(item[0], item[1], self.stop_event)
             finally:
                 self.speaking.clear()
 

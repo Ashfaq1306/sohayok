@@ -66,9 +66,13 @@ That's it. From now on Sohayok starts by itself when you sign in and waits in th
 - **Say "Tammy" while it is talking** to cut it off and give a new command, like Siri.
 - **Things to try:** "This PC খোলো", "ডি ড্রাইভে যাও", "এখানে হিসাব নামে একটা ফোল্ডার বানাও",
   "ইউটিউবের ট্যাবটা কেটে দাও", "রহিমকে হোয়াটসঅ্যাপে কল দাও", "Karim-কে হোয়াটসঅ্যাপে লেখো আমি
-  আসছি", "open Chrome and search for flights to Dhaka". Mixing English words into Bangla is fine.
-- **WhatsApp** (messages, voice and video calls) needs WhatsApp for Windows signed in once
-  (scan its QR code with your phone). Sohayok asks before it sends or calls.
+  আসছি", "open Chrome and search for flights to Dhaka", "ব্লুটুথ অফ করো", "জেবিএল স্পিকারটা
+  ডিসকানেক্ট করো", "connect my earbuds", "নোটিফিকেশনে কী আছে", "রিপ্লাই দাও আমি আসছি".
+  Mixing English words into Bangla is fine; English gets an English answer, Bangla a Bangla one.
+- **WhatsApp** (read, send, reply, voice and video calls) needs WhatsApp for Windows signed in
+  once (open it and scan its QR code with your phone). Sohayok asks before it sends or calls,
+  and says so if WhatsApp is signed out. Contacts saved in English are found from Bangla names
+  ("পিয়াস ভাই" finds "Pias Vai").
 - **Teach it your voice** once: `uv run sohayok train-wake --record 10` (say "Tammy" ten
   times; a few minutes on the CPU). It also learns from the "Tammy"s you said in daily use.
 - **Or press <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Space</kbd>** and speak, or type in the box.
@@ -164,7 +168,8 @@ and can also see the screen and use the mouse in any app. Screenshots then go to
 | --- | --- |
 | It doesn't wake up | Run `uv run sohayok train-wake --record 10` so it learns your voice; or use the hotkey |
 | It wakes up by itself | Raise `wake_threshold` to 0.5, or `wake_instant_threshold` to 0.9 |
-| It cuts you off mid-sentence | Raise `silence_seconds` (default 0.7) to 1.0 in `settings.json` |
+| It cuts you off mid-sentence | Raise `silence_seconds` (default 1.2) in `settings.json` |
+| Slow while other programs use the CPU/GPU | Sohayok runs at high CPU and real-time GPU priority by default (`cpu_priority`, `gpu_priority`); check they are not set to `normal` |
 | It hears the wrong words | Check the microphone in Windows Settings → Sound (input level 80–100%); the last recordings are in `%APPDATA%\Sohayok\recordings` with what it heard |
 | "voice unavailable" | Run `uv run sohayok setup`, then `uv run sohayok doctor` |
 | Slow answers | Other GPU programs (training, games) squeeze Sohayok out of GPU memory and make speech recognition very slow; close them. The first command after a pause reloads the answer model (2–3 s) |

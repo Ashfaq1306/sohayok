@@ -325,6 +325,10 @@ class Assistant:
             if result.startswith("cancelled"):
                 self.reply(CANCELLED[language], language)
                 return CANCELLED[language]
+            explained = _prepared_reply(result, language)
+            if explained:  # e.g. "WhatsApp is not signed in": no point asking the model
+                self.reply(explained, language)
+                return explained
             log.info("fast path failed (%s); asking the model", result)
 
         if self.brain is None:

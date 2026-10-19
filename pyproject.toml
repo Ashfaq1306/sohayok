@@ -35,6 +35,9 @@ dependencies = [
     "uiautomation>=2.0.29",
     "uvicorn>=0.54.0",
     "websockets>=17.2",
+    "winrt-windows-devices-radios>=3.2.1",
+    "winrt-windows-foundation>=3.2.1",
+    "winrt-windows-foundation-collections>=3.2.1",
 ]
 
 [project.scripts]

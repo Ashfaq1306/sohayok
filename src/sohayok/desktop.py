@@ -243,6 +243,13 @@ WAKE_NAMES = (
     "টমি",
     "ট্যামী",
     "ট্যামিই",
+    "টিমি",
+    "timmy",
+    # the user also calls it Jarvis
+    "jarvis",
+    "জার্ভিস",
+    "জাভিস",
+    "জারভিস",
 )
 
 
@@ -363,12 +370,14 @@ def run(config: Config, show_window: bool = True, greet: bool = True) -> None:
     import httpx
     import uvicorn
 
+    from sohayok.gpu import set_cpu_priority
     from sohayok.popup import DesktopShell
     from sohayok.server import create_app
     from sohayok.tools import load_all
     from sohayok.tools.timers import SCHEDULER
     from sohayok.tts import Speaker
 
+    set_cpu_priority(config.assistant.cpu_priority)
     host, port = config.server.host, config.server.port
     url = f"http://{host}:{port}/"
     if port_in_use(host, port):

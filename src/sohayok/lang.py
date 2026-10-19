@@ -188,7 +188,7 @@ def _letters(word: str) -> int:
     return sum(unicodedata.category(ch) == "Lo" for ch in word)
 
 
-def has_bangla_grammar(text: str) -> bool:
+def has_bangla_grammar(text: str, short_is_bangla: bool = True) -> bool:
     """Does Bangla-script text contain Bangla grammar, or only English written in Bangla letters?
 
     The Bangla recognizer handles the user's mixed speech ("ইউটিউবের ট্যাবটা কেটে ফেলো") far
@@ -205,5 +205,5 @@ def has_bangla_grammar(text: str) -> bool:
         stems = [word[: -len(end)] for end in _BANGLA_SUFFIXES if word.endswith(end)]
         if word not in _NOT_SUFFIXED and any(_letters(stem) >= 3 for stem in stems):
             return True
-    # one or two words with no grammar ("ক্রোম", "ভলিউম") are commands, not English sentences
-    return len(words) <= 2
+    # one or two words with no grammar ("ক্রোম", "ইয়েস") cannot be told apart by grammar
+    return short_is_bangla and len(words) <= 2

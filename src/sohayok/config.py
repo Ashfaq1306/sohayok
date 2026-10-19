@@ -25,6 +25,10 @@ class AssistantConfig:
     confirm_risky_actions: bool = True
     confirm_timeout_seconds: float = 30.0
     history_turns: int = 6
+    # CPU priority of Sohayok itself. With other jobs keeping the CPU at 97%, the decision
+    # step took 1.3-1.8 s (up to 4.8 s) at "normal" and 0.23 s at "high". Idle, Sohayok only
+    # runs the small wake-word model, so "high" costs other programs almost nothing.
+    cpu_priority: str = "high"
 
 
 @dataclass
@@ -75,8 +79,8 @@ class SpeechConfig:
     # Languages the detector may choose between.
     languages: list[str] = field(default_factory=lambda: ["bn", "en"])
     input_device: str = ""  # sounddevice name or index; "" = Windows default microphone
-    # Pause that ends a command. 0.7 s keeps replies quick; raise it if you get cut off.
-    silence_seconds: float = 0.7
+    # Pause that ends a command. The user was cut off mid-sentence at 0.7 s.
+    silence_seconds: float = 1.2
     # Keep the last N voice commands (audio + transcript) in %APPDATA%\Sohayok\recordings,
     # on this PC only, to check recognition later. 0 turns it off.
     keep_recordings: int = 20
