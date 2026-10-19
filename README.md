@@ -64,6 +64,11 @@ That's it. From now on Sohayok starts by itself when you sign in and waits in th
   "Tammy, ক্রোম খোলো". A clear "Tammy" opens the window instantly; an unclear one is
   double-checked by the speech recognizers first (about half a second).
 - **Say "Tammy" while it is talking** to cut it off and give a new command, like Siri.
+- **Things to try:** "This PC খোলো", "ডি ড্রাইভে যাও", "এখানে হিসাব নামে একটা ফোল্ডার বানাও",
+  "ইউটিউবের ট্যাবটা কেটে দাও", "রহিমকে হোয়াটসঅ্যাপে কল দাও", "Karim-কে হোয়াটসঅ্যাপে লেখো আমি
+  আসছি", "open Chrome and search for flights to Dhaka". Mixing English words into Bangla is fine.
+- **WhatsApp** (messages, voice and video calls) needs WhatsApp for Windows signed in once
+  (scan its QR code with your phone). Sohayok asks before it sends or calls.
 - **Teach it your voice** once: `uv run sohayok train-wake --record 10` (say "Tammy" ten
   times; a few minutes on the CPU). It also learns from the "Tammy"s you said in daily use.
 - **Or press <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Space</kbd>** and speak, or type in the box.
@@ -80,15 +85,18 @@ That's it. From now on Sohayok starts by itself when you sign in and waits in th
    1. Wake word ──── a tiny "Tammy" detector (trained on your voice) listens on the CPU;
         │            noises without speech are ignored, unclear calls are double-checked
         │
-   2. Hearing ────── a small language classifier (with Whisper when unsure) tells Bangla from
-        │            English in ~40 ms; BuzzASR (a Bangla Whisper) writes Bangla, Whisper English
+   2. Hearing ────── a small language classifier (CPU, ~40 ms) spots clear English; the rest,
+        │            including Bangla mixed with English words, goes to BuzzASR (a Bangla
+        │            Whisper), and only English written in Bangla letters is redone in English.
+        │            Speech runs at real-time GPU priority, so a busy GPU barely slows it
         │
    3. Deciding ───── everyday commands are recognised instantly; otherwise Laya-Bangla (fine-tuned
         │            for these actions) picks one of 28 actions in ~0.2 s on the CPU, and the
         │            answer model fills in the details: qwen3.5:2b on this PC, or an API you choose
         │
-   4. Doing ──────── one of 48 actions: apps, windows, keyboard, mouse, files, volume, Chrome,
-        │            YouTube, search, weather, reminders, GitHub, settings, PowerShell…
+   4. Doing ──────── one of 52 actions: apps, windows, File Explorer (This PC, drives, new
+        │            folders where you are), browser tabs, WhatsApp messages and calls, keyboard,
+        │            mouse, volume, YouTube, search, weather, reminders, settings, PowerShell…
         │
    5. Answering ──── a short spoken reply in a Bangladeshi Bangla or English voice
 ```
@@ -188,7 +196,8 @@ Measured on an RTX 4060 (8 GB). Methods, caveats, and full tables:
 | Decision model alone | 91.8% (63.4% before fine-tuning) |
 | Bangla speech recognition, FLEURS (200 real sentences) | 21.6% WER / 9.1% CER, vs 77.2% / 39.4% for Whisper large-v3 |
 | Spoken commands, Bangla / English WER | 15.9% / 9.9%; a quiet microphone does as well (15.7%) |
-| Bangla or English: your real Bangla commands / accented English / FLEURS | 10 of 10 (Whisper alone: 5) / 97.1% / 100% |
+| Spoken commands end to end (voice → action, dry run): test voices + the user's own recordings | **32 of 33** right; 0.45 s median recognition with the GPU at 100% from other jobs |
+| Bangla or English: the user's real (mixed) commands / Indian-English commands / FLEURS | 9 of 9 (Whisper alone: 4) / 96.8% / 100% |
 | Wake word, the user's real "Tammy"s it was not trained on | 9 of 9 with the personal model (shared model: 4 of 9); 0 of 31 noises |
 | Wake word on unseen voices / false wakes in 1 h of Bangla speech | 97.7% instant + checked rest / 0 |
 

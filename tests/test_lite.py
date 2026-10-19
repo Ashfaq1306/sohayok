@@ -45,9 +45,11 @@ def _server(replies, seen):
 def test_every_tool_belongs_to_one_action():
     names = set(load_all().names())
     assert set(TOOL_ACTION) <= names
-    missing = (
-        names - set(TOOL_ACTION) - {"find_apps", "move_mouse", "click", "scroll", "ask_claude_code"}
-    )
+    from sohayok.brain.lite import keyword_action
+
+    by_keyword = set(keyword_action("whatsapp").tools) | set(keyword_action("call x").tools)
+    others = {"find_apps", "move_mouse", "click", "scroll", "ask_claude_code"}
+    missing = names - set(TOOL_ACTION) - others - by_keyword
     assert not missing, missing
     assert len(questions("bn")["action"]["criteria"]) == len(ACTIONS)
 
@@ -118,3 +120,13 @@ def test_chat_uses_the_small_model_without_tools():
         "তুমি কে?", "bn", _executor([]), [], {}
     )
     assert reply.text == "আমি সহায়ক।" and "tools" not in seen[0]
+
+
+def test_whatsapp_and_calls_are_picked_by_keyword():
+    from sohayok.brain.lite import keyword_action
+
+    assert keyword_action("রহিমকে হোয়াটসঅ্যাপে লেখো আমি আসছি").tools[0] == "whatsapp_send"
+    assert keyword_action("আম্মুকে ভিডিও কল দাও").tools == ("whatsapp_call",)
+    assert keyword_action("call rahim").tools == ("whatsapp_call",)
+    assert keyword_action("recall the file") is None
+    assert keyword_action("ক্রোম খোলো") is None

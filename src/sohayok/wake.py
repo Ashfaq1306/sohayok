@@ -10,6 +10,7 @@ from __future__ import annotations
 import collections
 import json
 import logging
+import threading
 import time
 from collections.abc import Callable
 from importlib import resources
@@ -73,6 +74,8 @@ class WakeWordListener:
         self.confirm: Callable[[np.ndarray, float, float], bool] = lambda audio, s, sp: True
         # While True (the assistant is busy or speaking), audio is ignored.
         self.paused: Callable[[], bool] = lambda: False
+        # Called with the audio, score, and speech seconds of every instant wake (to keep it).
+        self.keep: Callable[[np.ndarray, float, float], None] = lambda audio, s, sp: None
         self.gain = 1.0
         # At or above this score the wake is accepted immediately. On held-out audio, 97.7%
         # of "Tammy"s scored >= 0.8 and no frame of 1 h of Bangla speech did.
@@ -150,6 +153,7 @@ class WakeWordListener:
                 cooldown = time.monotonic() + 1.5
                 if score >= self.instant_threshold:
                     accepted = True  # sure enough to wake at once, without waiting for Whisper
+                    threading.Thread(target=self.keep, args=(audio, score, speech)).start()
                 else:
                     try:
                         accepted = self.confirm(audio, score, speech)

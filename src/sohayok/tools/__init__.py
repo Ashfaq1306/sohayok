@@ -14,6 +14,7 @@ def load_all() -> Registry:
         shell,
         system,
         timers,
+        whatsapp,
         windows,
     )
 

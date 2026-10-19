@@ -6,6 +6,7 @@ import html
 import json
 import re
 import subprocess
+import time
 import urllib.parse
 import webbrowser
 
@@ -214,3 +215,81 @@ def web_lookup(query: str) -> list[dict[str, str]]:
     if not results:
         raise ToolError("the web search returned no results")
     return results
+
+
+BROWSER_CLASSES = {"Chrome_WidgetWin_1"}  # Chrome, Edge, Brave and other Chromium browsers
+
+
+def browser_tabs() -> list[tuple[object, object]]:
+    """(window, tab) for every tab of every open Chromium browser window."""
+    import uiautomation as auto
+
+    tabs = []
+    for window in auto.GetRootControl().GetChildren():
+        if window.ClassName not in BROWSER_CLASSES or window.ControlTypeName != "WindowControl":
+            continue
+        for control, _ in auto.WalkControl(window, maxDepth=14):
+            if control.ControlTypeName == "TabItemControl":
+                tabs.append((window, control))
+    return tabs
+
+
+def site_word(name: str) -> str:
+    """What a tab title contains for a site the user named: "ইউটিউবের" -> "youtube"."""
+    from rapidfuzz import fuzz, process
+
+    from sohayok.translit import to_latin
+
+    key = normalize(name).strip(" .!?।")
+    for end in ("য়ের", "ের", "এর", "তে", "র", "ে"):
+        if key.endswith(end) and len(key) > len(end) + 1:
+            key = key[: -len(end)]
+            break
+    url = SITES.get(key)
+    if url is None and re.search(r"[ঀ-৿]", key):
+        # misheard names ("উটিউব", "ট্যুব") still sound like a known site
+        bangla = [k for k in SITES if re.search(r"[ঀ-৿]", k)]
+        found = process.extractOne(key, bangla, scorer=fuzz.WRatio, score_cutoff=75)
+        url = SITES[found[0]] if found else None
+    if url:
+        host = urllib.parse.urlparse(url).netloc.removeprefix("www.")
+        return host.split(".")[0]
+    return to_latin(key) if re.search(r"[ঀ-৿]", key) else key
+
+
+@tool(
+    'Close a browser tab by what it shows ("YouTube", "Gmail", a page title), or the '
+    "current tab when no name is given.",
+    {"name": string("Site or page the tab shows; empty for the current tab")},
+    required=[],
+)
+def close_tab(name: str = "") -> dict:
+    from rapidfuzz import fuzz
+
+    from sohayok import winapi
+
+    if not name.strip():
+        winapi.press("ctrl+w")
+        return {"closed": "current tab", "spoken_bn": "ট্যাব বন্ধ করলাম।", "spoken_en": "Closed."}
+    word = site_word(name)
+    best, best_score = None, 0.0
+    for window, tab in browser_tabs():
+        score = fuzz.partial_ratio(word.lower(), (tab.Name or "").lower())
+        if score > best_score:
+            best, best_score = (window, tab), score
+    if best is None or best_score < 75:
+        raise ToolError(f"no open browser tab shows {name!r}")
+    window, tab = best
+    title = (tab.Name or "").split(" - ")[0][:60]
+    try:
+        tab.GetSelectionItemPattern().Select()
+    except Exception:
+        tab.Click(simulateMove=False)
+    winapi.force_foreground(window.NativeWindowHandle)
+    time.sleep(0.25)
+    winapi.press("ctrl+w")
+    return {
+        "closed": title,
+        "spoken_bn": f"“{title}” ট্যাবটা বন্ধ করলাম।",
+        "spoken_en": f"Closed the “{title}” tab.",
+    }

@@ -416,7 +416,8 @@ def label_kept_clips(folder: Path, bangla=None) -> tuple[list[np.ndarray], list[
             meta["bangla"] = bangla.transcribe(audio, "bn")
         heard = [meta.get(key, "") for key in ("bangla", "whisper")]
         speech = speech_seconds(audio)
-        if any(heard_wake_name(text) for text in heard) and speech >= 0.15:
+        named = meta.get("instant") or any(heard_wake_name(text) for text in heard)
+        if named and speech >= 0.15:
             positives.append(audio)
         elif speech < 0.1:
             negatives.append(audio)

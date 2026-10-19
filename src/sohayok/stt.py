@@ -7,6 +7,7 @@ import logging
 import os
 import re
 import time
+import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -75,6 +76,8 @@ def collapse_repeats(text: str) -> str:
 
 
 def clean(text: str) -> str:
+    # One Unicode form everywhere: the Bangla model writes "য়" as U+09DF, patterns use য + ়
+    text = unicodedata.normalize("NFC", text)
     text = collapse_repeats(re.sub(r"\s+", " ", text).strip())
     if text.lower().strip(" .!।") in {h.strip(" .!।") for h in HALLUCINATIONS}:
         return ""
@@ -131,6 +134,10 @@ class LanguageDetector:
         from speechbrain.inference.classifiers import EncoderClassifier
         from speechbrain.utils.fetching import FetchConfig, LocalStrategy
 
+        for name in list(logging.root.manager.loggerDict):  # its modules set their own levels
+            if name.startswith("speechbrain"):
+                logging.getLogger(name).setLevel(logging.WARNING)
+
         if folder is None:
             from sohayok.config import app_dir
 
@@ -179,6 +186,9 @@ class LanguageDetector:
 BANGLA_BIAS = 5.5
 SURE_BANGLA = 14.7  # VoxLingua margins beyond these decide alone (Whisper cannot outvote them)
 SURE_ENGLISH = -3.7
+# Below this VoxLingua margin, Whisper's p(English) >= 0.9 decides English. The user's mixed
+# Bangla scored 4.5-20 even when Whisper called it English (p up to 0.93).
+UNSURE_BANGLA = 3.0
 
 
 def bangla_or_english(margin: float, whisper_english: float | None) -> tuple[str, float]:
@@ -346,15 +356,49 @@ class Transcriber:
 
     def transcribe(self, audio: np.ndarray, language: str | None = None) -> Transcript:
         from sohayok.audio import normalize_level
+        from sohayok.gpu import priority
 
         started = time.monotonic()
         audio = normalize_level(audio.astype(np.float32))
-        probability = 1.0
         if speech_seconds(audio, enough=0.15) < 0.15:
             # nothing was said: decoding silence only invents text (and takes long)
             return Transcript("", language or self.languages[0], 0.0, time.monotonic() - started)
-        if language is None:
+        with priority(getattr(self, "gpu_priority", "normal")):
+            if language is None:
+                text, language, probability = self._recognise(audio)
+            else:
+                text, probability = self._model_for(language).transcribe(audio, language), 1.0
+        return Transcript(clean(text), language, probability, time.monotonic() - started)
+
+    def _model_for(self, language: str):
+        return self.bangla if language == "bn" and self.bangla is not None else self.multi
+
+    def _recognise(self, audio: np.ndarray) -> tuple[str, str, float]:
+        """Pick the language and transcribe, with as few GPU passes as possible.
+
+        The user mixes English words into Bangla ("ইউটিউবের ট্যাবটা কেটে ফেলো"), which the
+        Bangla model writes well and English Whisper turns into nonsense ("YouTube tab KT
+        Fellow"). So anything not clearly English goes to the Bangla model first, and only a
+        transcript with no Bangla grammar ("প্লিজ ওপেন ডিস পিসি") is redone in English.
+        """
+        from sohayok.lang import has_bangla_grammar
+
+        bilingual = sorted(self.languages) == ["bn", "en"] and self.bangla is not None
+        if self.detector is None or not bilingual:
             language, probability = self.detect_language(audio)
-        model = self.bangla if language == "bn" and self.bangla is not None else self.multi
-        text = clean(model.transcribe(audio, language))
-        return Transcript(text, language, probability, time.monotonic() - started)
+            return self._model_for(language).transcribe(audio, language), language, probability
+        margin = self.detector.margin(audio, "bn", "en")  # ~40 ms on the CPU
+        sure = round(1 / (1 + float(np.exp(-abs(margin - SURE_ENGLISH)))), 3)
+        if margin < SURE_ENGLISH:
+            return self.multi.transcribe(audio, "en"), "en", sure
+        if margin < UNSURE_BANGLA:
+            # the Bangla model turns English into real-looking Bangla here ("কোটি দিনের মধ্যেই
+            # মার্চের…" for "what day of the week…"), so let Whisper settle it (~0.2 s)
+            _, _, probs = self.multi.model.detect_language(audio)
+            if dict(probs).get("en", 0.0) >= 0.9:
+                return self.multi.transcribe(audio, "en"), "en", 0.9
+        bangla = self.bangla.transcribe(audio, "bn")
+        if not bangla.strip() or has_bangla_grammar(bangla):
+            return bangla, "bn", sure
+        english = self.multi.transcribe(audio, "en")
+        return (english, "en", 0.5) if clean(english) else (bangla, "bn", 0.5)

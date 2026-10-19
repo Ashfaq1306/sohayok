@@ -192,6 +192,7 @@ def load_speech(assistant: Assistant, config: Config, info: dict[str, str]) -> N
             speech.languages,
             speech.language_detector,
         )
+        transcriber.gpu_priority = speech.gpu_priority
         # Compile GPU kernels now, not on the first command.
         import numpy as np
 
@@ -267,6 +268,7 @@ def heard_wake_name(text: str) -> bool:
 
 def start_wake_word(assistant: Assistant, config: Config, activate: Callable[..., None]) -> str:
     """Listen for the wake word; returns how to say it (shown in the window)."""
+    from sohayok.gpu import priority as gpu_priority
     from sohayok.wake import WakeWordListener, personal_thresholds, resolve_wake_model
 
     model, name = resolve_wake_model(config.activation.wake_model)
@@ -293,7 +295,8 @@ def start_wake_word(assistant: Assistant, config: Config, activate: Callable[...
         for label, model, language in models:
             if model is None:
                 continue
-            heard[label] = model.transcribe(audio, language)
+            with gpu_priority(config.speech.gpu_priority):
+                heard[label] = model.transcribe(audio, language)
             if heard_wake_name(heard[label]):
                 accepted = True
                 break
@@ -331,6 +334,23 @@ def start_wake_word(assistant: Assistant, config: Config, activate: Callable[...
                 assistant.speaker.stop()
         activate(tail)
 
+    def keep(audio, score: float, speech: float) -> None:
+        """Instant wakes are the clearest examples of the user's "Tammy": keep them too."""
+        if config.speech.keep_recordings > 0:
+            try:
+                from sohayok.audio import save_recording
+
+                meta = {"instant": True, "score": round(score, 3), "speech": round(speech, 2)}
+                save_recording(
+                    app_dir() / "recordings" / "wake",
+                    audio,
+                    meta,
+                    config.speech.keep_recordings * 5,
+                )
+            except Exception:
+                log.debug("could not keep the wake recording", exc_info=True)
+
+    listener.keep = keep
     listener.confirm = confirm
     listener.on_wake = on_wake
     # Only a recording in progress mutes the wake word; speaking and thinking do not.

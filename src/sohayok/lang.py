@@ -142,3 +142,68 @@ _EN_WORDS = sorted(_EN_NUMBERS.items(), key=lambda kv: -len(kv[0]))
 
 def to_bangla_digits(value: int | str) -> str:
     return str(value).translate(str.maketrans("0123456789", "০১২৩৪৫৬৭৮৯"))
+
+
+# Bangla words that English never produces when the Bangla recognizer writes English speech
+# phonetically ("please open this PC" -> "প্লিজ ওপেন ডিস পিসি"): pronouns, question words,
+# particles, and everyday verb forms. Words that English also produces ("a" -> এ, "are" -> আর,
+# "they" -> দে, "then" -> দেন, "ball" -> বল, ".com" -> কম) are left out.
+_BANGLA_GRAMMAR = {
+    unicodedata.normalize("NFC", word)
+    for word in """
+ আমি আমার আমাকে আমাদের আমরা তুমি তোমার তোমাকে তুই তোর আপনি আপনার আপনাকে তার তাকে
+ ওকে তারা তাদের এর একে এটা এটি ওটা ওটি সেটা সেটি এই ওই সেই এগুলো ওগুলো কেউ কিছু
+ কি কী কেন কোথায় কোথা কখন কেমন কত কতো কোন কোনটা কে কার কাকে কিভাবে কীভাবে
+ এবং কিন্তু না নাই নেই নয় হ্যাঁ হা জি জ্বি তো যে যদি তাহলে তবে শুধু আবার আরো আরও একটু
+ একটা একটি দুইটা দুটো সব সবাই খুব অনেক বেশি এখন এখনই আজ আজকে কাল পরে আগে এখানে ওখানে
+ সেখানে ঐখানে উপরে নিচে ভিতরে বাইরে থেকে দিয়ে জন্য মধ্যে সাথে সঙ্গে কাছে মতো মত পর্যন্ত
+ করো কর করেন করুন করে করছি করছে করবা করবে করবেন করতে করেছি করেছে করলাম করলে করি করবো করব
+ খোলো খোল খুলো খুলে খুলুন খুলবা খুলবে বন্ধ দাও দেও দিন দিবা দিবে দিয়ো যাও যা যান যাবে
+ চলো চল চালাও চালু চালিয়ে বাড়াও বাড়ান কমাও কমান বলো বলেন বলুন বলবা লেখো লেখ লিখো লিখ
+ লেখবা লিখবা লিখে দেখাও দেখো দেখ দেখি দেখবা পাঠাও পাঠান পাঠিয়ে ফেলো ফেল নাও নিন রাখো রাখ
+ থামো থাম থামাও ছাড়ো ছাড় ছাড়া শোনো শোন শুনি চাই চাচ্ছি চাইছি পারো পারবে পারবা পারি হবে হচ্ছে
+ হয়েছে হলো আছে আছো আছেন ছিল ছিলো নেই লাগবে লাগে দরকার মানে ঠিক আচ্ছা ভালো ধন্যবাদ
+
+    দেখুন শুনুন চালান চালাও বন্ধ নিয়ে নিয়ো নিবা নিবে হয় হয়নি হয়েছিল হয়েছিলো হবে না আসো আসছি এসো
+    আসবে যাবো যাব যাচ্ছি পারছি পারছো পারছেন লাগছে দিচ্ছি দিচ্ছে দিয়েছি করছো করছেন করছিলাম
+    গতকাল আগামীকাল সকালে বিকেলে রাতে দুপুরে কালকে মধ্যেই এখানেই ভাই আপু আম্মু আব্বু
+    """.split()
+}
+# Bangla endings on English loanwords: "ইউটিউবের", "ট্যাবটা", "ফাইলগুলো", "ক্রোমে".
+_BANGLA_SUFFIXES = tuple(
+    unicodedata.normalize("NFC", s)
+    for s in ("ের", "য়ের", "টা", "টি", "টাকে", "টাতে", "গুলো", "গুলা", "গুলি", "কে", "তে", "য়ে")
+)
+_NOT_SUFFIXED = {
+    unicodedata.normalize("NFC", w) for w in ("প্লে", "টুডে", "পকেট", "লাইক", "ব্ল্যাকে", "হোয়াইটে")
+}
+
+
+# "WhatsApp" as the recognizers write it: হোয়াটসঅ্যাপ, হুয়াটস্যাপ, ওয়াটস্যাপ, হোয়াটসআপ, …
+WHATSAPP = r"(?:whats ?app|[হও][ো ু]?য়াটস ?(?:্যা|অ্যা|আ|এ|য়া|্য)প|হটস ?অ্যাপ)"
+
+
+def _letters(word: str) -> int:
+    """Letters, not code points: vowel signs, the virama and the nukta do not count."""
+    return sum(unicodedata.category(ch) == "Lo" for ch in word)
+
+
+def has_bangla_grammar(text: str) -> bool:
+    """Does Bangla-script text contain Bangla grammar, or only English written in Bangla letters?
+
+    The Bangla recognizer handles the user's mixed speech ("ইউটিউবের ট্যাবটা কেটে ফেলো") far
+    better than English Whisper, but writes plain English speech phonetically; this tells the
+    two apart.
+    """
+    words = [w for w in _WORD.findall(normalize(text)) if w[0] >= BANGLA_RANGE[0]]
+    if not words:
+        return False
+    for word in words:
+        if word in _BANGLA_GRAMMAR:
+            return True
+        # a real word before the ending: "ইউটিউবের" yes, "ওয়ের" ("where") no
+        stems = [word[: -len(end)] for end in _BANGLA_SUFFIXES if word.endswith(end)]
+        if word not in _NOT_SUFFIXED and any(_letters(stem) >= 3 for stem in stems):
+            return True
+    # one or two words with no grammar ("ক্রোম", "ভলিউম") are commands, not English sentences
+    return len(words) <= 2

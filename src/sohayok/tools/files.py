@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
+import subprocess
 import time
 from pathlib import Path
 
@@ -48,6 +50,118 @@ SKIP_DIRS = {
 }
 
 
+# Places that are not folders on disk; File Explorer opens them by their shell name.
+SHELL_PLACES = {
+    "this pc": "shell:MyComputerFolder",
+    "my computer": "shell:MyComputerFolder",
+    "computer": "shell:MyComputerFolder",
+    "my pc": "shell:MyComputerFolder",
+    "দিস পিসি": "shell:MyComputerFolder",
+    "ডিস পিসি": "shell:MyComputerFolder",
+    "এই পিসি": "shell:MyComputerFolder",
+    "মাই পিসি": "shell:MyComputerFolder",
+    "মাই কম্পিউটার": "shell:MyComputerFolder",
+    "কম্পিউটার": "shell:MyComputerFolder",
+    "recycle bin": "shell:RecycleBinFolder",
+    "রিসাইকেল বিন": "shell:RecycleBinFolder",
+    "control panel": "shell:ControlPanelFolder",
+    "কন্ট্রোল প্যানেল": "shell:ControlPanelFolder",
+}
+SHELL_PLACES = {normalize(k): v for k, v in SHELL_PLACES.items()}
+# Drive letters as spoken in Bangla ("ডি ড্রাইভ").
+BANGLA_LETTERS = {
+    "সি": "c",
+    "ডি": "d",
+    "ই": "e",
+    "এফ": "f",
+    "জি": "g",
+    "এইচ": "h",
+    "আই": "i",
+    "জে": "j",
+    "কে": "k",
+    "এল": "l",
+    "এম": "m",
+    "এন": "n",
+    "পি": "p",
+    "কিউ": "q",
+    "এক্স": "x",
+    "জেড": "z",
+}
+
+
+def shell_place(name: str) -> str | None:
+    key = normalize(name).strip(" .!?।").removesuffix(" folder").removesuffix(" ফোল্ডার")
+    return SHELL_PLACES.get(key)
+
+
+def drive(name: str) -> Path | None:
+    """ "D drive", "drive D", "D:", "ডি ড্রাইভ" -> D:\\ (only drives that exist)."""
+    key = normalize(name).strip(" .!?।").replace("-", " ")
+    key = key.replace("ড্রাইভে", "ড্রাইভ").replace("ড্রাইভের", "ড্রাইভ")
+    match = re.fullmatch(
+        r"(?:(?P<a>[a-z]|[ঀ-৿]+)\s*(?:drive|ড্রাইভ)|(?:drive|ড্রাইভ)\s*(?P<b>[a-z])|(?P<c>[a-z]):\\?)",
+        key,
+    )
+    if not match:
+        return None
+    letter = match.group("a") or match.group("b") or match.group("c")
+    letter = BANGLA_LETTERS.get(letter, letter)
+    if len(letter) != 1:
+        return None
+    root = Path(f"{letter.upper()}:\\")
+    return root if root.exists() else None
+
+
+def explorer_windows() -> list:
+    """Open File Explorer windows (Shell.Application), front-most first when known."""
+    import win32com.client
+
+    from sohayok import winapi
+
+    windows = []
+    for window in win32com.client.Dispatch("Shell.Application").Windows():
+        try:
+            if Path(window.FullName).name.lower() == "explorer.exe":
+                windows.append(window)
+        except Exception:
+            continue
+    front = winapi.foreground_window()
+    windows.sort(key=lambda w: int(w.HWND) != front)
+    return windows
+
+
+def explorer_folder() -> Path | None:
+    """The folder shown in the File Explorer window in front, if it is a folder on disk."""
+    from sohayok import winapi
+
+    try:
+        windows = explorer_windows()
+    except Exception:
+        return None
+    if not windows or int(windows[0].HWND) != winapi.foreground_window():
+        return None
+    try:
+        folder = Path(windows[0].Document.Folder.Self.Path)
+    except Exception:
+        return None
+    return folder if folder.is_dir() else None
+
+
+def show_in_explorer(target: str | Path) -> str:
+    """Show a folder or shell place in the Explorer window in front, or open a new one."""
+    from sohayok import winapi
+
+    try:
+        windows = explorer_windows()
+    except Exception:
+        windows = []
+    if windows and int(windows[0].HWND) == winapi.foreground_window():
+        windows[0].Navigate(str(target))
+        return "here"
+    subprocess.Popen(["explorer.exe", str(target)])
+    return "new window"
+
+
 def known_folder(name: str) -> Path | None:
     key = normalize(name).removesuffix(" folder").removesuffix(" ফোল্ডার")
     folder = KNOWN.get(key)
@@ -59,7 +173,7 @@ def known_folder(name: str) -> Path | None:
 
 
 def resolve(path: str) -> Path:
-    folder = known_folder(path)
+    folder = known_folder(path) or drive(path)
     if folder:
         return folder
     expanded = Path(os.path.expandvars(os.path.expanduser(path.strip().strip('"'))))
@@ -113,15 +227,24 @@ def find_files(query: str) -> list[dict]:
 
 
 @tool(
-    "Open a file with its default app, or a folder in File Explorer. Accepts a full path, "
-    "or a known folder: desktop, documents, downloads, pictures, music, videos, screenshots.",
-    {"path": string("Path or known folder name")},
+    "Open a file with its default app, or a folder in File Explorer (in the Explorer window "
+    'in front, if there is one). Accepts a full path, a drive ("D drive"), This PC, '
+    "Recycle Bin, or a known folder: desktop, documents, downloads, pictures, music, videos, "
+    "screenshots.",
+    {"path": string("Path, drive, or place name")},
 )
 def open_path(path: str) -> str:
+    place = shell_place(path)
+    if place:
+        show_in_explorer(place)
+        return f"opened {path}"
     target = resolve(path)
     if not target.exists():
         raise ToolError(f"{target} does not exist")
-    os.startfile(target)  # noqa: S606 - opening the user's own file is the point
+    if target.is_dir():
+        show_in_explorer(target)
+    else:
+        os.startfile(target)  # noqa: S606 - opening the user's own file is the point
     return f"opened {target}"
 
 
@@ -139,18 +262,43 @@ def read_text_file(path: str) -> str:
     return text[:6000] + ("\n…(truncated)" if len(text) > 6000 else "")
 
 
+def unused_name(folder: Path, name: str) -> Path:
+    """`name`, or "name (2)", "name (3)", … if it is taken, like File Explorer."""
+    target, number = folder / name, 2
+    while target.exists():
+        target, number = folder / f"{name} ({number})", number + 1
+    return target
+
+
 @tool(
-    "Create a new folder.",
-    {"path": string("Full path, or a name to create on the Desktop")},
+    "Create a new folder. With no location it goes in the folder open in File Explorer (if "
+    "Explorer is in front), otherwise on the Desktop.",
+    {
+        "name": string('Folder name (empty: "New folder"), or a full path'),
+        "location": string("Where: a drive, known folder, or full path; empty for the default"),
+    },
 )
-def create_folder(path: str) -> str:
-    target = (
-        resolve(path)
-        if (":" in path or path.startswith(("~", "%")))
-        else known_folder("desktop") / path
-    )
-    target.mkdir(parents=True, exist_ok=True)
-    return f"created {target}"
+def create_folder(name: str = "", location: str = "") -> str | dict:
+    name = name.strip().strip('"')
+    if name and (":" in name or name.startswith(("~", "%"))):
+        target = resolve(name)
+        target.mkdir(parents=True, exist_ok=True)
+        return f"created {target}"
+    if location:
+        folder = resolve(location)
+        if not folder.is_dir():
+            raise ToolError(f"{folder} is not a folder")
+    else:
+        folder = explorer_folder() or known_folder("desktop")
+    target = unused_name(folder, name or "New folder")
+    target.mkdir(parents=True)
+    place = "Desktop" if folder == known_folder("desktop") else (folder.name or str(folder))
+    place_bn = "ডেস্কটপ" if place == "Desktop" else place
+    return {
+        "created": str(target),
+        "spoken_bn": f"{place_bn}-এ “{target.name}” ফোল্ডার বানালাম।",
+        "spoken_en": f"Created the folder “{target.name}” in {place}.",
+    }
 
 
 @tool(

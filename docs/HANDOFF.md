@@ -60,7 +60,7 @@ bench/       stt, brain, voice, wake benchmarks; docs/benchmarks.md has the numb
 
 ## Verified
 
-- 159 unit tests pass (`uv run pytest -q`); read-only desktop checks pass.
+- 181 unit tests pass (`uv run pytest -q`); read-only desktop checks pass.
 - Typed commands: 91.4% right action (Laya + qwen3.5:2b), Bangla 90.8%.
 - Speech: Bangla FLEURS 21.6% WER; spoken commands 15.9% (Bangla), 9.9% (English); quiet
   mic as good as normal.
@@ -69,6 +69,21 @@ bench/       stt, brain, voice, wake benchmarks; docs/benchmarks.md has the numb
   বাড়াও", "আমি আসলে জানতে চাচ্ছি যে কাইনেটিক এনার্জি…"); the detector fired on their
   "Tammy" but Whisper heard "Demi" and refused, now fixed (accepted spellings + instant
   wake). **Not yet confirmed with their voice after the fix.**
+- Round 3 (2026-10-19, after the user's second real session):
+  - Their speech mixes English words into Bangla; recognition order changed to Bangla model
+    first (docs/benchmarks.md, "Update 2"). Their real commands: 9 of 9 right language.
+  - Another project's training jobs kept the GPU at 100%: recognition took 8–19 s. Sohayok now
+    takes real-time GPU priority while recognising (`sohayok/gpu.py`): 0.45 s median.
+  - New actions: This PC / drives / Recycle Bin, navigate the Explorer window in front, new
+    folder "here" (`tools/files.py`); close a browser tab by name (`browser.close_tab`, live
+    tested on the user's Chrome with a tab it opened itself); WhatsApp open chat / send / call
+    (`tools/whatsapp.py`, picked by keyword in `brain/lite.keyword_action`).
+  - **WhatsApp is not signed in on this PC**, so its tools are untested against the real
+    window; the control names (search box, "Type a message", "Voice call") are WhatsApp
+    Web's and must be checked once it is signed in.
+  - `bench/dry_run.py`: voice → action without touching the desktop: 32 of 33.
+  - Tests no longer write into the real `%APPDATA%\Sohayok` (they had filled `recordings\`
+    with fake 1 s "ভলিউম বাড়াও" clips).
 - v0.2 follow-up (same day), from replaying the user's kept recordings:
   - Whisper gave their Bangla p(bn) = 0.00; half their Bangla commands went to the English
     recognizer. The new language step gets 10 of 10 (docs/benchmarks.md, "Bangla or English?").
@@ -105,16 +120,19 @@ bench/       stt, brain, voice, wake benchmarks; docs/benchmarks.md has the numb
 
 ## Next steps, in order
 
-1. **Try "Tammy" with the real voice** after this update. Look at `%APPDATA%\Sohayok\
-   sohayok.log` (`wake check (score …) heard …`) and `recordings\wake\*.json`; replay them
-   with `python -m sohayok.bench.wake_user`.
-2. **More of the user's voice:** `sohayok train-wake --record 10` (guided), then retrain as
+1. **WhatsApp:** once the user has signed WhatsApp in, inspect its window (search box,
+   chat list items, message box, call buttons) and test `whatsapp_open_chat` live; test
+   sending only with the user's go-ahead (their own "Message yourself" chat).
+2. **Try "Tammy" and commands with the real voice.** The log now has `heard … in … s` and
+   `handled in … s` lines per command; replay wake clips with `python -m sohayok.bench.wake_user`
+   and commands with `python -m sohayok.bench.dry_run`.
+3. **More of the user's voice:** `sohayok train-wake --record 10` (guided), then retrain as
    daily-use clips accumulate. Also keep a few of their English commands to test English.
-3. **Faster replies:** stream TTS (start speaking at the first sentence), keep the answer
+4. **Faster replies:** stream TTS (start speaking at the first sentence), keep the answer
    model loaded while the window is open, and measure end-to-end latency with the GPU free.
-4. **Offline Bangla voice** (for example an MMS/VITS Bangla model) as a fallback.
-5. **Installer:** a one-file Windows installer so `uv` is not needed.
-6. Re-run `bench/voice.py` with the lite pipeline and update `docs/benchmarks.md`.
+5. **Offline Bangla voice** (for example an MMS/VITS Bangla model) as a fallback.
+6. **Installer:** a one-file Windows installer so `uv` is not needed.
+7. Re-run `bench/voice.py` with the lite pipeline and update `docs/benchmarks.md`.
 
 ## Should it be rewritten in Rust?
 

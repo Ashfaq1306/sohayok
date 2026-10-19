@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from sohayok.brain.base import Brain
+from sohayok.brain.lite import _prepared_reply
 from sohayok.config import Config
 from sohayok.lang import detect_language, normalize
 from sohayok.router import route, strip_wake_echo, strip_wake_name
@@ -195,6 +196,13 @@ class Assistant:
                 return
             self.set_state("transcribing")
             heard = self.transcriber.transcribe(audio)
+            log.info(
+                "heard %.1f s of audio in %.2f s [%s]: %s",
+                audio.size / 16_000,
+                heard.seconds,
+                heard.language,
+                heard.text,
+            )
             keep = self.config.speech.keep_recordings
             if keep > 0:
                 try:
@@ -281,6 +289,13 @@ class Assistant:
                 self.reply(FAILED.get(self.language, FAILED["en"]), self.language)
 
     def handle(self, command: Command) -> str:
+        started = time.monotonic()
+        try:
+            return self._handle(command)
+        finally:
+            log.info("handled in %.2f s", time.monotonic() - started)
+
+    def _handle(self, command: Command) -> str:
         language = command.language or detect_language(command.text, self.language)
         if language not in {"bn", "en"}:
             language = "en"
@@ -302,7 +317,7 @@ class Assistant:
                 result = self.executor.run(step, step_args)
             if not result.startswith(("error", "cancelled")):
                 text = intent.reply.get(language, intent.reply.get("en", DONE[language]))
-                text = text.replace("{result}", result)
+                text = _prepared_reply(result, language) or text.replace("{result}", result)
                 self._remember(command.text, text)
                 self.emit("route", tool=intent.tool, fast=True)
                 self.reply(text, language)

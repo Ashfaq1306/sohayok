@@ -68,7 +68,7 @@ ACTIONS: dict[str, Action] = {
     "keys": Action(
         "কিবোর্ডের কোনো বোতাম বা শর্টকাট চাপা, নতুন ট্যাব",
         "Press a key or keyboard shortcut, new tab",
-        ("press_keys",),
+        ("press_keys", "close_tab"),
     ),
     "window": Action(
         "উইন্ডো ছোট, বড়, বন্ধ, বদলানো বা ডেস্কটপ দেখানো",

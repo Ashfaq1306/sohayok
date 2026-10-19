@@ -111,6 +111,7 @@ def cmd_listen(args: argparse.Namespace) -> None:
         speech.languages,
         speech.language_detector,
     )
+    transcriber.gpu_priority = speech.gpu_priority
     recorder = Recorder(
         speech.input_device or None,
         speech.silence_seconds,

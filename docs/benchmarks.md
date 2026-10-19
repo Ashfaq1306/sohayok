@@ -57,6 +57,37 @@ Two problems made a naive conversion silently wrong:
 
 ### Bangla or English?
 
+**Update 2 (mixed Bangla).** In the next real session the user's commands mixed English words
+into Bangla ("ইউটিউবের ট্যাবটা কেটে ফেলো"), and the classifier + Whisper rule sent most of them
+to English Whisper ("YouTube tab KT Fellow"). The Bangla model writes such speech well, so the
+order changed (`Transcriber._recognise`): clear English (classifier margin < −3.7, or < 3 with
+Whisper p(en) ≥ 0.9) goes to Whisper; everything else to the Bangla model; a Bangla transcript
+with no Bangla grammar (`lang.has_bangla_grammar`: pronouns, particles, verb forms, endings
+like "-ের"/"-টা") is English written in Bangla letters and is redone in English.
+
+| Set (clips) | v0.2 rule: right language / WER | **Now** |
+| --- | --- | --- |
+| The user's real commands (9) | 4 of 9 | **9 of 9** (incl. "Please open this PC" in English) |
+| Spoken Bangla commands (37) | 94.6% / 18.9% | 94.6% / 19.4% |
+| Spoken English commands, Indian voice (31) | 100% / 5.8% | 96.8% / 5.8% |
+| FLEURS Bangla validation, English (20 + 20) | 100% / 19.9%, 4.6% | 100% / 19.9%, 4.6% |
+
+107 of 117 clips need one decoding pass, 10 need two.
+
+**GPU priority.** With other training jobs keeping the GPU at 100%, recognising a 2 s command
+took 18 s at normal Windows GPU priority, 13 s at high, and 3.4 s at real-time (`sohayok.gpu`);
+in the end-to-end run below (training still running) the median was 0.45 s. Sohayok raises
+its priority only while it recognises speech (`speech.gpu_priority`).
+
+**End to end** (`python -m sohayok.bench.dry_run`): 27 spoken test commands (Bangladeshi Bangla
+and Indian/US English voices: This PC, drives, new folders, tabs, WhatsApp, YouTube, volume,
+weather…) plus 6 of the user's own recordings, through the real recognizers, decider, and
+answer model, with every tool replaced by a recorder. **32 of 33** reached the right action
+with Claude Sonnet 5.5 or Haiku 5.5; 21 were handled by instant rules (~0.5 s after speech
+ends), the rest took a median of 2.0 s (Sonnet) / 2.1 s (Haiku) for the answer model. The miss
+is a recording the Bangla model hears as "গুল্ড্রমণ করো" ("Google Chrome open koro"); beam
+search (3 or 5) does not fix it.
+
 **Update (v0.2, real use).** Replaying the user's own recorded commands showed Whisper's
 detector giving their Bangla a probability of **0.00 every time**; with the rule below, half
 of their real Bangla commands (5 of 10) went to the English recognizer and came out as

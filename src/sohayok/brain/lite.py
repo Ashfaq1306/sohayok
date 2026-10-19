@@ -21,7 +21,9 @@ from typing import Any
 import httpx
 
 from sohayok.brain.base import Reply
-from sohayok.decide import ACTIONS, Decision
+from sohayok.decide import ACTIONS, Action, Decision
+from sohayok.lang import WHATSAPP as WHATSAPP_WORD
+from sohayok.lang import normalize
 from sohayok.safety import Executor
 
 log = logging.getLogger(__name__)
@@ -71,6 +73,27 @@ SUMMARY_PROMPT = (
     "in one or two short spoken sentences in {language}. No markdown, lists, or URLs."
 )
 LANGUAGE = {"bn": "natural Bangla (Bangla script)", "en": "English"}
+
+
+WHATSAPP = re.compile(WHATSAPP_WORD, re.IGNORECASE)
+CALL = re.compile(
+    r"\b(?:video |voice |audio )?call\b|(?:ভিডিও )?(?:কল|ফোন) (?:দাও|দেও|দিন|করো|কর|লাগাও)",
+    re.IGNORECASE,
+)
+
+
+def keyword_action(text: str) -> Action | None:
+    """WhatsApp messages and calls: picked by keyword, as the decider has no such action."""
+    text = normalize(text)
+    if CALL.search(text):
+        return Action("হোয়াটসঅ্যাপে কল", "WhatsApp call", ("whatsapp_call",))
+    if WHATSAPP.search(text):
+        return Action(
+            "হোয়াটসঅ্যাপ",
+            "WhatsApp",
+            ("whatsapp_send", "whatsapp_open_chat", "whatsapp_call"),
+        )
+    return None
 
 
 def _prepared_reply(result: str, language: str) -> str:
@@ -152,6 +175,8 @@ class LiteBrain:
         )
         action = ACTIONS.get(decision.action)
         unsure = decision.probability < self.min_confidence
+        if keyword_action(text) is not None:  # actions the decision model was not trained on
+            action, unsure = keyword_action(text), False
         if decision.action == "chat" and not unsure:
             return Reply(self._say(CHAT_PROMPT, language, text, history=history[-4:]), [], 1)
         if action is None or not action.tools or unsure:
@@ -170,15 +195,15 @@ class LiteBrain:
         calls = [{"name": name, "args": args, "result": result}]
         if result.startswith(("error", "cancelled")):
             return Reply("", calls, 2)  # the assistant explains failures and cancellations
+        spoken = _prepared_reply(result, language)
+        if spoken:  # the tool already phrased its result (exact numbers, where a folder went)
+            return Reply(spoken, calls, 2)
         template = DONE_REPLIES.get(name, {}).get(language)
         if template:
             try:
                 return Reply(template.format(**{k: v for k, v in args.items()}), calls, 2)
             except (KeyError, IndexError):
                 return Reply(re.sub(r"\{\w+\}\s*", "", template), calls, 2)
-        spoken = _prepared_reply(result, language)
-        if spoken:  # the tool already phrased exact numbers; a small model could garble them
-            return Reply(spoken, calls, 2)
         if name == "current_time":
             spoken = f"এখন {result}।" if language == "bn" else f"It's {result}."
             return Reply(spoken, calls, 2)

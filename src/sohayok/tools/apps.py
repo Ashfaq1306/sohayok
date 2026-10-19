@@ -184,6 +184,10 @@ def launch(app_name: str, apps: dict[str, str]) -> None:
     {"name": string("Application name as the user said it")},
 )
 def open_app(name: str) -> str:
+    from sohayok.tools.files import drive, open_path, shell_place
+
+    if shell_place(name) or drive(name):  # "This PC", "D drive": File Explorer places
+        return open_path(name)
     apps = start_apps()
     match = resolve_app(name, apps)
     if match is None:

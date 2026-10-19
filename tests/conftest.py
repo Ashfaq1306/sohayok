@@ -15,6 +15,12 @@ FAKE_APPS = {
 
 
 @pytest.fixture(autouse=True)
+def private_app_dir(tmp_path, monkeypatch):
+    """Tests never write into the user's real app folder (recordings, settings)."""
+    monkeypatch.setenv("APPDATA", str(tmp_path / "appdata"))
+
+
+@pytest.fixture(autouse=True)
 def fake_start_apps(monkeypatch):
     """Tests never shell out to PowerShell for the Start menu."""
     monkeypatch.setattr(apps, "start_apps", lambda refresh=False: dict(FAKE_APPS))

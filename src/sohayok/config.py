@@ -69,6 +69,9 @@ class SpeechConfig:
     beam_size: int = 1
     # "voxlingua" (a small spoken-language classifier on the CPU) or "whisper".
     language_detector: str = "voxlingua"
+    # GPU priority while recognising speech: "realtime" keeps Sohayok fast while other programs
+    # (training jobs, games) load the GPU; "normal" leaves Windows' scheduling alone.
+    gpu_priority: str = "realtime"
     # Languages the detector may choose between.
     languages: list[str] = field(default_factory=lambda: ["bn", "en"])
     input_device: str = ""  # sounddevice name or index; "" = Windows default microphone
