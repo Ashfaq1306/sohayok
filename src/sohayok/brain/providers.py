@@ -180,11 +180,29 @@ class OpenAICompatChat(ChatModel):
         return {"content": message.get("content") or "", "tool_calls": calls}
 
 
+# Models that reject `output_config.effort` (400); every newer Claude model accepts it.
+NO_EFFORT = (
+    "claude-3",
+    "claude-haiku-4-5",
+    "claude-sonnet-4-5",
+    "claude-opus-4-1",
+    "claude-opus-4-0",
+)
+# Room for adaptive thinking on top of the spoken reply: thinking tokens count against
+# max_tokens, and a reply cut off mid-thought comes back empty.
+THINKING_ROOM = 1024
+
+
 class AnthropicChat(ChatModel):
-    def __init__(self, model: str, api_key: str, client: httpx.Client | None = None) -> None:
+    """Claude through the official SDK, at low effort: a spoken reply should come quickly."""
+
+    def __init__(self, model: str, api_key: str, client: Any = None) -> None:
+        import anthropic
+
         self.model, self.name = model, model
-        self.client = client or httpx.Client(timeout=httpx.Timeout(60, connect=8))
-        self.headers = {"x-api-key": api_key, "anthropic-version": "2023-06-01"}
+        self.client = client or anthropic.Anthropic(
+            api_key=api_key, timeout=anthropic.Timeout(60, connect=8)
+        )
 
     def chat(self, messages, tools=None, num_predict=200):
         system = "\n".join(m["content"] for m in messages if m["role"] == "system")
@@ -193,15 +211,21 @@ class AnthropicChat(ChatModel):
             for m in messages
             if m["role"] in {"user", "assistant"} and m.get("content")
         ]
-        body: dict[str, Any] = {
+        request: dict[str, Any] = {
             "model": self.model,
-            "max_tokens": max(num_predict, 256),
+            "max_tokens": max(num_predict, 256) + THINKING_ROOM,
             "messages": turns,
+            # On a policy decline, the API retries on its default fallback model; models
+            # without one simply run alone.
+            "betas": ["server-side-fallback-2026-07-01"],
+            "fallbacks": "default",
         }
+        if not self.model.startswith(NO_EFFORT):
+            request["output_config"] = {"effort": "low"}
         if system:
-            body["system"] = system
+            request["system"] = system
         if tools:
-            body["tools"] = [
+            request["tools"] = [
                 {
                     "name": t["name"],
                     "description": t["description"],
@@ -209,17 +233,14 @@ class AnthropicChat(ChatModel):
                 }
                 for t in tools
             ]
-        response = self.client.post(
-            "https://api.anthropic.com/v1/messages", json=body, headers=self.headers
-        )
-        if response.status_code >= 400:
-            raise RuntimeError(f"{response.status_code}: {response.text[:300]}")
-        content = response.json()["content"]
-        text = " ".join(b.get("text", "") for b in content if b.get("type") == "text").strip()
+        response = self.client.beta.messages.create(**request)
+        if response.stop_reason == "refusal":
+            raise RuntimeError("Claude declined this request")
+        text = " ".join(b.text for b in response.content if b.type == "text").strip()
         calls = [
-            {"id": b["id"], "function": {"name": b["name"], "arguments": b.get("input", {})}}
-            for b in content
-            if b.get("type") == "tool_use"
+            {"id": b.id, "function": {"name": b.name, "arguments": b.input or {}}}
+            for b in response.content
+            if b.type == "tool_use"
         ]
         return {"content": text, "tool_calls": calls}
 

@@ -75,31 +75,48 @@ def test_openai_compatible_chat_converts_tool_calls():
     }
 
 
-def test_anthropic_chat_maps_system_and_tools():
-    seen = []
+def fake_claude(seen, stop_reason="end_turn"):
+    from types import SimpleNamespace as NS
 
-    def handler(request):
-        seen.append(json.loads(request.content))
-        return httpx.Response(
-            200,
-            json={
-                "content": [
-                    {"type": "text", "text": "ঠিক আছে"},
-                    {"type": "tool_use", "id": "t1", "name": "volume", "input": {"action": "up"}},
-                ]
-            },
+    def create(**request):
+        seen.append(request)
+        return NS(
+            stop_reason=stop_reason,
+            content=[
+                NS(type="text", text="ঠিক আছে"),
+                NS(type="tool_use", id="t1", name="volume", input={"action": "up"}),
+            ],
         )
 
-    chat = AnthropicChat(
-        "claude-x", "k", client=httpx.Client(transport=httpx.MockTransport(handler))
-    )
+    return NS(beta=NS(messages=NS(create=create)))
+
+
+def test_anthropic_chat_maps_system_and_tools():
+    seen = []
+    chat = AnthropicChat("claude-sonnet-5-5", "k", client=fake_claude(seen))
     out = chat.chat(
         [{"role": "system", "content": "be brief"}, {"role": "user", "content": "x"}],
         [{"name": "volume", "description": "v", "parameters": {"type": "object"}}],
     )
     assert out["content"] == "ঠিক আছে"
     assert out["tool_calls"][0]["function"] == {"name": "volume", "arguments": {"action": "up"}}
-    assert seen[0]["system"] == "be brief" and seen[0]["tools"][0]["input_schema"]
+    request = seen[0]
+    assert request["system"] == "be brief" and request["tools"][0]["input_schema"]
+    # Low effort for quick spoken replies, room for thinking, refusal fallback opted in.
+    assert request["output_config"] == {"effort": "low"} and request["max_tokens"] >= 1024
+    assert request["fallbacks"] == "default"
+
+
+def test_anthropic_chat_older_models_and_refusals():
+    seen = []
+    AnthropicChat("claude-haiku-4-5", "k", client=fake_claude(seen)).chat(
+        [{"role": "user", "content": "x"}]
+    )
+    assert "output_config" not in seen[0]  # Haiku 4.5 rejects effort
+    with pytest.raises(RuntimeError, match="declined"):
+        AnthropicChat("claude-sonnet-5-5", "k", client=fake_claude([], "refusal")).chat(
+            [{"role": "user", "content": "x"}]
+        )
 
 
 def test_make_chat_model_needs_a_key_for_apis(keys):
