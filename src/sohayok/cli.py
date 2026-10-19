@@ -109,6 +109,7 @@ def cmd_listen(args: argparse.Namespace) -> None:
         speech.compute_type,
         speech.beam_size,
         speech.languages,
+        speech.language_detector,
     )
     recorder = Recorder(
         speech.input_device or None,
@@ -308,6 +309,51 @@ def cmd_setup(args: argparse.Namespace) -> None:
 
         snapshot_download(DECIDER_REPO, revision=DECIDER_REVISION)
         print(f"decision model ready: {DECIDER_REPO}")
+    from sohayok.stt import LANGUAGE_ID_REPO, LanguageDetector
+
+    LanguageDetector()
+    print(f"language detector ready: {LANGUAGE_ID_REPO}")
+
+
+def cmd_train_wake(args: argparse.Namespace) -> None:
+    """Teach the "Tammy" detector your voice, from your kept attempts (and new recordings)."""
+    import json
+
+    from sohayok.audio import RATE, save_recording
+    from sohayok.training.wake_word import label_kept_clips, personalize
+
+    app = config_module.app_dir()
+    features = Path(args.features) if args.features else app / "wake-features"
+    if not (features / "train_pos.npy").exists():
+        sys.exit(f"wake training data not found in {features} (see docs/HANDOFF.md)")
+    mine = app / "recordings" / "wake-mine"
+    if args.record:
+        import sounddevice as sd
+
+        print(f'Say "Tammy" once after each prompt ({args.record} times), as you normally would.')
+        for i in range(1, args.record + 1):
+            input(f"  {i}/{args.record}: press Enter, then say Tammy… ")
+            audio = sd.rec(int(2 * RATE), samplerate=RATE, channels=1, dtype="float32")
+            sd.wait()
+            save_recording(mine, audio[:, 0], {"bangla": "tammy", "guided": True}, 500)
+    from sohayok.models import resolve_bangla_model
+    from sohayok.stt import CT2Whisper
+
+    speech = config_module.current().speech
+    bangla = CT2Whisper(
+        resolve_bangla_model(speech.bangla_model), speech.device, speech.compute_type
+    )
+    positives, negatives = label_kept_clips(app / "recordings" / "wake", bangla)
+    guided, _ = label_kept_clips(mine)
+    positives += guided
+    print(f"{len(positives)} of your Tammys and {len(negatives)} noises; training (a few minutes)…")
+    if len(positives) < 5:
+        sys.exit("need at least 5 recordings of you saying Tammy: run with --record 10")
+    output = app / "models" / "tammy-personal.onnx"
+    report = personalize(features, positives, negatives, output.with_suffix(".new.onnx"))
+    output.with_suffix(".new.onnx").replace(output)
+    output.with_suffix(".json").write_text(json.dumps(report, indent=1), "utf-8")
+    print(f"ready: {output} (used from the next start; delete it to go back to the shared model)")
 
 
 def cmd_install(args: argparse.Namespace) -> None:
@@ -374,6 +420,10 @@ def main(argv: list[str] | None = None) -> None:
     )
     setup.set_defaults(func=cmd_setup)
     sub.add_parser("config", help="open the settings file").set_defaults(func=cmd_config)
+    train_wake = sub.add_parser("train-wake", help='teach the "Tammy" detector your voice')
+    train_wake.add_argument("--record", type=int, default=0, help="record N new Tammys first")
+    train_wake.add_argument("--features", help="folder with the shared wake training data")
+    train_wake.set_defaults(func=cmd_train_wake)
     install = sub.add_parser("install", help="start with Windows; add Start menu/Desktop shortcuts")
     install.add_argument("--remove", action="store_true", help="remove the shortcuts")
     install.set_defaults(func=cmd_install)

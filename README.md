@@ -62,7 +62,10 @@ That's it. From now on Sohayok starts by itself when you sign in and waits in th
 
 - **Say "Tammy"**, wait for the soft chime, then say what you want. Or say it all at once:
   "Tammy, ক্রোম খোলো". A clear "Tammy" opens the window instantly; an unclear one is
-  double-checked by Whisper first (about half a second).
+  double-checked by the speech recognizers first (about half a second).
+- **Say "Tammy" while it is talking** to cut it off and give a new command, like Siri.
+- **Teach it your voice** once: `uv run sohayok train-wake --record 10` (say "Tammy" ten
+  times; a few minutes on the CPU). It also learns from the "Tammy"s you said in daily use.
 - **Or press <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Space</kbd>** and speak, or type in the box.
 - Speak **Bangla, English, Banglish, or a mix**. Sohayok answers in the language you used.
 - The window **hides by itself** when you're done. Click ✕ to hide it now, 📌 to keep it open.
@@ -74,9 +77,11 @@ That's it. From now on Sohayok starts by itself when you sign in and waits in th
 ```
   "Tammy, ক্রোম খোলো"
         │
-   1. Wake word ──── a tiny "Tammy" detector listens on the CPU; Whisper double-checks it
+   1. Wake word ──── a tiny "Tammy" detector (trained on your voice) listens on the CPU;
+        │            noises without speech are ignored, unclear calls are double-checked
         │
-   2. Hearing ────── Whisper tells Bangla from English; BuzzASR (a Bangla Whisper) writes Bangla
+   2. Hearing ────── a small language classifier (with Whisper when unsure) tells Bangla from
+        │            English in ~40 ms; BuzzASR (a Bangla Whisper) writes Bangla, Whisper English
         │
    3. Deciding ───── everyday commands are recognised instantly; otherwise Laya-Bangla (fine-tuned
         │            for these actions) picks one of 28 actions in ~0.2 s on the CPU, and the
@@ -149,8 +154,9 @@ and can also see the screen and use the mouse in any app. Screenshots then go to
 
 | Problem | Try |
 | --- | --- |
-| It doesn't wake up | Speak a little closer; lower `wake_threshold` to 0.2; or use the hotkey |
+| It doesn't wake up | Run `uv run sohayok train-wake --record 10` so it learns your voice; or use the hotkey |
 | It wakes up by itself | Raise `wake_threshold` to 0.5, or `wake_instant_threshold` to 0.9 |
+| It cuts you off mid-sentence | Raise `silence_seconds` (default 0.7) to 1.0 in `settings.json` |
 | It hears the wrong words | Check the microphone in Windows Settings → Sound (input level 80–100%); the last recordings are in `%APPDATA%\Sohayok\recordings` with what it heard |
 | "voice unavailable" | Run `uv run sohayok setup`, then `uv run sohayok doctor` |
 | Slow answers | Other GPU programs (training, games) squeeze Sohayok out of GPU memory and make speech recognition very slow; close them. The first command after a pause reloads the answer model (2–3 s) |
@@ -165,6 +171,7 @@ uv run sohayok                 # start (window + tray + wake word)
 uv run sohayok run --quiet     # start hidden in the tray (what Windows start-up uses)
 uv run sohayok do "ভলিউম ৩০ করো"   # run one typed command for real and show each step
 uv run sohayok listen          # say something and see what it heard
+uv run sohayok train-wake --record 10   # teach the "Tammy" detector your voice
 uv run sohayok say "আমি সহায়ক"    # speak text
 uv run sohayok devices         # list microphones
 uv run sohayok doctor          # check the setup
@@ -181,7 +188,9 @@ Measured on an RTX 4060 (8 GB). Methods, caveats, and full tables:
 | Decision model alone | 91.8% (63.4% before fine-tuning) |
 | Bangla speech recognition, FLEURS (200 real sentences) | 21.6% WER / 9.1% CER, vs 77.2% / 39.4% for Whisper large-v3 |
 | Spoken commands, Bangla / English WER | 15.9% / 9.9%; a quiet microphone does as well (15.7%) |
-| Wake word on unseen voices / false wakes in 1 h of Bangla speech | 97.7% instant + Whisper-checked rest / 0 |
+| Bangla or English: your real Bangla commands / accented English / FLEURS | 10 of 10 (Whisper alone: 5) / 97.1% / 100% |
+| Wake word, the user's real "Tammy"s it was not trained on | 9 of 9 with the personal model (shared model: 4 of 9); 0 of 31 noises |
+| Wake word on unseen voices / false wakes in 1 h of Bangla speech | 97.7% instant + checked rest / 0 |
 
 Models: decider [`ashfaq1306/sohayok-laya-actions`](https://huggingface.co/ashfaq1306/sohayok-laya-actions)
 (fine-tuned from [`algolyzer/laya-bangla`](https://huggingface.co/algolyzer/laya-bangla)),

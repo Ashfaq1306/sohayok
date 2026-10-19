@@ -13,7 +13,7 @@ from typing import Any
 from sohayok.brain.base import Brain
 from sohayok.config import Config
 from sohayok.lang import detect_language, normalize
-from sohayok.router import route, strip_wake_name
+from sohayok.router import route, strip_wake_echo, strip_wake_name
 from sohayok.safety import ConfirmationBroker, Executor, Pending, parse_answer
 from sohayok.tools.registry import Registry
 
@@ -227,6 +227,8 @@ class Assistant:
                 return
             if answer_only and self.broker.pending is None:
                 return  # answered meanwhile; never turn this recording into a command
+            if lead is not None and self.broker.pending is None:
+                heard.text = strip_wake_echo(heard.text)
             if self.broker.pending is not None and not self._clear_answer(heard.text, audio):
                 self.emit("heard", text=heard.text, language=heard.language, source="voice")
                 self.emit("error", message="answer not clear; press Yes/No or say it again")
@@ -256,12 +258,16 @@ class Assistant:
     # ---- understanding and acting -------------------------------------------------------
     def reply(self, text: str, language: str) -> None:
         self.emit("reply", text=text, language=language)
+        if self.state in {"listening", "transcribing"}:
+            return  # the user is already saying something new: show the answer, don't speak
         if self.speaker and text:
             self.set_state("speaking")
             try:
                 self.speaker.say(text)
             except Exception:
                 log.exception("speech output failed")
+            if self.state != "speaking":
+                return  # interrupted: "Tammy" started listening while this was spoken
         self.set_state("idle")
 
     def _work(self) -> None:

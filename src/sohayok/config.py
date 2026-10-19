@@ -67,10 +67,13 @@ class SpeechConfig:
     device: str = "cuda"
     compute_type: str = "int8_float16"
     beam_size: int = 1
+    # "voxlingua" (a small spoken-language classifier on the CPU) or "whisper".
+    language_detector: str = "voxlingua"
     # Languages the detector may choose between.
     languages: list[str] = field(default_factory=lambda: ["bn", "en"])
     input_device: str = ""  # sounddevice name or index; "" = Windows default microphone
-    silence_seconds: float = 1.0
+    # Pause that ends a command. 0.7 s keeps replies quick; raise it if you get cut off.
+    silence_seconds: float = 0.7
     # Keep the last N voice commands (audio + transcript) in %APPDATA%\Sohayok\recordings,
     # on this PC only, to check recognition later. 0 turns it off.
     keep_recordings: int = 20

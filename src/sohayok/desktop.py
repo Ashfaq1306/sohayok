@@ -190,6 +190,7 @@ def load_speech(assistant: Assistant, config: Config, info: dict[str, str]) -> N
             speech.compute_type,
             speech.beam_size,
             speech.languages,
+            speech.language_detector,
         )
         # Compile GPU kernels now, not on the first command.
         import numpy as np
@@ -214,7 +215,14 @@ def start_hotkey(combo: str, activate: Callable[[], None]) -> Any:
 
 
 WAKE_NAMES = (
-    # How Whisper actually wrote the user's "Tammy" (Bangla-accented): Demi, Damn me, Atatemi.
+    # How the recognizers actually wrote the user's "Tammy": Demi, Damn me, Atatemi, Dummy;
+    # in Bangla ডেমি, টেমি, তামি, ড্যামি, কেমি.
+    "ডেমি",
+    "ড্যামি",
+    "ডামি",
+    "দেমি",
+    "কেমি",
+    "dummy",
     "demi",
     "demmy",
     "dammy",
@@ -259,40 +267,74 @@ def heard_wake_name(text: str) -> bool:
 
 def start_wake_word(assistant: Assistant, config: Config, activate: Callable[..., None]) -> str:
     """Listen for the wake word; returns how to say it (shown in the window)."""
-    from sohayok.wake import WakeWordListener, resolve_wake_model
+    from sohayok.wake import WakeWordListener, personal_thresholds, resolve_wake_model
 
     model, name = resolve_wake_model(config.activation.wake_model)
     listener = WakeWordListener(
         model, config.activation.wake_threshold, config.speech.input_device or None
     )
     listener.instant_threshold = config.activation.wake_instant_threshold
+    calibrated = personal_thresholds(model)
+    if calibrated:  # a model trained on the user's voice brings its own thresholds
+        listener.threshold, listener.instant_threshold = calibrated
 
-    def confirm(audio) -> bool:
-        # A second opinion from Whisper keeps random sounds from waking the assistant.
+    def confirm(audio, score: float = 0.0, speech: float = 0.0) -> bool:
+        """Second opinion on a borderline wake: did a recognizer hear the name?
+
+        The Bangla model goes first: on the user's real attempts it wrote ডেমি, টেমি, তামি,
+        ড্যামি, while English Whisper wrote "Dummy", "Can we?", "Damn it!".
+        """
         transcriber = assistant.transcriber
         if not config.activation.wake_confirm or transcriber is None:
             return True
-        text = transcriber.multi.transcribe(audio, "en")
-        accepted = heard_wake_name(text)
-        log.info("wake check heard %r: %s", text, "yes" if accepted else "no")
+        heard: dict[str, str] = {}
+        models = [("bangla", transcriber.bangla, "bn"), ("whisper", transcriber.multi, "en")]
+        accepted = False
+        for label, model, language in models:
+            if model is None:
+                continue
+            heard[label] = model.transcribe(audio, language)
+            if heard_wake_name(heard[label]):
+                accepted = True
+                break
+        log.info(
+            "wake check (score %.2f, speech %.2fs) heard %s: %s",
+            score,
+            speech,
+            heard,
+            "yes" if accepted else "no",
+        )
         keep = config.speech.keep_recordings
-        if keep > 0:  # the user's own wake attempts, for tuning the detector to their voice
+        if keep > 0:  # the user's own wake attempts, for training the detector on their voice
             try:
                 from sohayok.audio import save_recording
 
                 save_recording(
                     app_dir() / "recordings" / "wake",
                     audio,
-                    {"whisper": text, "accepted": accepted},
-                    keep * 2,
+                    {
+                        **heard,
+                        "score": round(score, 3),
+                        "speech": round(speech, 2),
+                        "accepted": accepted,
+                    },
+                    keep * 5,
                 )
             except Exception:
                 log.debug("could not keep the wake recording", exc_info=True)
         return accepted
 
+    def on_wake(tail) -> None:
+        # "Tammy" while Sohayok is talking (or working) interrupts it, like Siri.
+        if assistant.state not in {"idle", "listening", "transcribing"}:
+            if assistant.speaker is not None:
+                assistant.speaker.stop()
+        activate(tail)
+
     listener.confirm = confirm
-    listener.on_wake = lambda tail: activate(tail) if assistant.state == "idle" else None
-    listener.paused = lambda: assistant.state not in {"idle"}
+    listener.on_wake = on_wake
+    # Only a recording in progress mutes the wake word; speaking and thinking do not.
+    listener.paused = lambda: assistant.state in {"listening", "transcribing"}
     threading.Thread(target=listener.run, name="wake-word", daemon=True).start()
     return f'say "{name}"'
 

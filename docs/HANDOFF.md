@@ -34,11 +34,15 @@ Design goals, as the user set them:
 ## Architecture in one screen
 
 ```
-wake.py      openWakeWord embeddings → tammy.onnx (CPU, 12.5×/s); ≥0.8 wakes at once,
-             0.3–0.8 asks Whisper (desktop.heard_wake_name)
+wake.py      openWakeWord embeddings → tammy-personal.onnx (from `sohayok train-wake`,
+             in %APPDATA%\Sohayok\models, its thresholds in the .json) or the shared
+             tammy.onnx; needs ≥0.2 s of speech; instant above the instant threshold, else
+             the Bangla model then Whisper must hear the name (desktop.heard_wake_name).
+             Saying it while Sohayok talks stops the speech and listens.
 audio.py     Silero VAD recorder, level normalisation, kept recordings
-stt.py       Whisper large-v3-turbo picks bn/en (anything not clearly English = Bangla);
-             BuzzASR Bengali (CTranslate2 int8) transcribes Bangla
+stt.py       VoxLingua107 ECAPA (CPU), plus Whisper when unsure, picks bn/en
+             (bangla_or_english); BuzzASR Bengali (CTranslate2 int8) transcribes Bangla,
+             Whisper large-v3-turbo English; silence is never decoded
 router.py    instant rules for everyday commands (Bangla, Banglish, English)
 decide.py    Laya-Bangla fine-tune: one "which action?" question over 28 actions
 brain/lite.py     decision → the action's 1–7 tools → answer model fills arguments →
@@ -56,7 +60,7 @@ bench/       stt, brain, voice, wake benchmarks; docs/benchmarks.md has the numb
 
 ## Verified
 
-- 153 unit tests pass (`uv run pytest -q`); read-only desktop checks pass.
+- 159 unit tests pass (`uv run pytest -q`); read-only desktop checks pass.
 - Typed commands: 91.4% right action (Laya + qwen3.5:2b), Bangla 90.8%.
 - Speech: Bangla FLEURS 21.6% WER; spoken commands 15.9% (Bangla), 9.9% (English); quiet
   mic as good as normal.
@@ -65,11 +69,25 @@ bench/       stt, brain, voice, wake benchmarks; docs/benchmarks.md has the numb
   বাড়াও", "আমি আসলে জানতে চাচ্ছি যে কাইনেটিক এনার্জি…"); the detector fired on their
   "Tammy" but Whisper heard "Demi" and refused, now fixed (accepted spellings + instant
   wake). **Not yet confirmed with their voice after the fix.**
+- v0.2 follow-up (same day), from replaying the user's kept recordings:
+  - Whisper gave their Bangla p(bn) = 0.00; half their Bangla commands went to the English
+    recognizer. The new language step gets 10 of 10 (docs/benchmarks.md, "Bangla or English?").
+  - The Bangla model looped for 13–17 s on silent recordings; silence is now skipped.
+  - Their "Tammy" was refused by English Whisper ("Demi", "Dummy", "Can we?") and 31 of 40
+    wake candidates were keyboard/room noise. Personal model + speech gate + Bangla-first
+    check: 9 of 9 unseen "Tammy"s wake in cross-validation, 0 of 31 noises.
+  - Personal model trained: `%APPDATA%\Sohayok\models\tammy-personal.onnx` (+ .json).
+  - Still not tried live by the user after these changes.
 
 ## Known problems and limits
 
-1. **Wake word with the user's real voice** is the most important open item (above). If it
-   still misses: lower `wake_threshold`, and retrain on `recordings\wake\` (see next steps).
+1. **Wake word with the user's real voice** is still the most important open item. The
+   personal model is trained from only 9 real clips; if it misses, run
+   `sohayok train-wake --record 10`. If it wakes by itself, delete
+   `models\tammy-personal.onnx` to go back to the shared model.
+   `train-wake` needs the shared training features in `%APPDATA%\Sohayok\wake-features`
+   (copied from `E:\projects\sohayok-data\wake-tammy`; rebuild with
+   `python -m sohayok.training.wake_word build`).
 2. **GPU sharing.** Another training job on the 8 GB card pushed Sohayok's models out of GPU
    memory and one command took 49 s to transcribe. Idle, Sohayok now holds ~2.5 GB (speech);
    the answer model unloads after 2 min and Laya runs on the CPU.
@@ -80,14 +98,18 @@ bench/       stt, brain, voice, wake benchmarks; docs/benchmarks.md has the numb
 5. The **Claude computer-use** path and the end-to-end **spoken** benchmark with the lite
    pipeline have not been re-run since the last changes.
 6. Changing the wake word in Settings takes effect after restarting Sohayok.
+7. **App names said in Bangla** are sometimes misspelled ("ক্রমে" for Chrome, "জিমিনিয়াই" for
+   Gemini). A vocabulary hint (initial prompt / hotwords) fixed some and broke others (the
+   hint leaked into one transcript), so it is not used.
+8. The user's **English** with their accent is untested (no English recordings yet).
 
 ## Next steps, in order
 
 1. **Try "Tammy" with the real voice** after this update. Look at `%APPDATA%\Sohayok\
-   sohayok.log` (`wake check heard …`) and `recordings\wake\*.json`.
-2. **Train the detector on the user's voice:** add their kept wake clips (and a few dozen
-   recorded on purpose) as positives in `training/wake_word.py`, rebuild features (TTS is
-   cached), retrain, and re-run `bench/wake.py`.
+   sohayok.log` (`wake check (score …) heard …`) and `recordings\wake\*.json`; replay them
+   with `python -m sohayok.bench.wake_user`.
+2. **More of the user's voice:** `sohayok train-wake --record 10` (guided), then retrain as
+   daily-use clips accumulate. Also keep a few of their English commands to test English.
 3. **Faster replies:** stream TTS (start speaking at the first sentence), keep the answer
    model loaded while the window is open, and measure end-to-end latency with the GPU free.
 4. **Offline Bangla voice** (for example an MMS/VITS Bangla model) as a fallback.
@@ -102,8 +124,8 @@ time goes today (GPU free):
 | Step | Time | Runs in |
 | --- | --- | --- |
 | Wake word | a few ms per 80 ms frame; instant wake | ONNX Runtime (C++) |
-| End of speech (silence wait) | 1.0 s by design | — |
-| Speech recognition | ~0.4–0.6 s | CTranslate2 (C++/CUDA) |
+| End of speech (silence wait) | 0.7 s by design | — |
+| Language + speech recognition | ~0.3–0.7 s | PyTorch (CPU) + CTranslate2 (C++/CUDA) |
 | Decision (Laya) | ~0.2 s | PyTorch (C++) on the CPU |
 | Answer model | ~0.5–2 s | llama.cpp via Ollama (C++/CUDA) or an API |
 | Spoken reply | ~0.5–1 s | Microsoft's servers |

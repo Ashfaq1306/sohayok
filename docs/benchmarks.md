@@ -57,6 +57,34 @@ Two problems made a naive conversion silently wrong:
 
 ### Bangla or English?
 
+**Update (v0.2, real use).** Replaying the user's own recorded commands showed Whisper's
+detector giving their Bangla a probability of **0.00 every time**; with the rule below, half
+of their real Bangla commands (5 of 10) went to the English recognizer and came out as
+nonsense ("Let the box go.", "you are stuck in the Jimin…"). Sohayok now asks a dedicated
+spoken-language classifier first, [VoxLingua107 ECAPA](https://huggingface.co/speechbrain/lang-id-voxlingua107-ecapa)
+(21M parameters, CPU), and adds Whisper's opinion only when the classifier is not sure. The
+classifier alone mistakes Indian-accented English for Bangla (30% of the en-IN clips), so
+neither works alone: `stt.bangla_or_english` combines them (Bangla if margin − logit p(en) > 5.5).
+
+| Set | Whisper rule (old) | VoxLingua alone | **Combined (now)** | Time |
+| --- | ---: | ---: | ---: | ---: |
+| The user's real Bangla commands (10) | 50% | 100% | **100%** | ~210 ms |
+| Spoken Bangla commands, synthetic (102) | 95.1% | 98.0% | **97.1%** | ~30 ms |
+| Spoken English commands, Indian voice (102) | 97.1% | 69.6% | **97.1%** | ~210 ms |
+| FLEURS Bangla validation, full and first 3 s (100 + 100, never used for tuning) | – | – | **100%** | ~25–40 ms |
+| FLEURS English, full and first 3 s (100 + 100) | 100% | 100% | **100%** | ~25–40 ms |
+
+The rule's two numbers were fitted on the first three rows and FLEURS *test* clips; the
+FLEURS Bangla validation rows are held out. The user's English (Bangladeshi accent) has not
+been tested, as none of their kept recordings was in English.
+
+Two more fixes from the same replay: a recording with no speech in it is no longer decoded
+(the Bangla model ran for 13–17 s on 1 s of silence, retrying at higher temperatures), and
+decoding is a single greedy pass with a length limit. The user's real commands now take
+0.3–0.7 s to recognise (1.0–1.3 s for 10 s monologues).
+
+The rest of this section is the earlier (v0.1) analysis.
+
 Whisper's language detector often hears **short** Bangla commands as Hindi or Gujarati. Taking
 the likelier of Bangla and English sent most spoken Bangla commands to the English
 recognizer. Sohayok now treats anything that is not clearly English (p(en) < 0.5) as Bangla:
@@ -214,6 +242,34 @@ transcribes the last 2 s and the wake is accepted only if it heard the name.
 trusted when it is high. On the same held-out audio, 97.7% of "Tammy"s scored ≥ 0.8 and no
 frame of the hour of Bangla speech did (≥ 0.7: 2 frames per hour; ≥ 0.5: 15). Sohayok now
 wakes immediately at ≥ 0.8 and asks Whisper only between 0.3 and 0.8.
+
+### With the user's real voice (v0.2)
+
+The 40 wake candidates kept from the user's first real session (2026-10-19) told a different
+story from the synthetic test:
+
+- **31 were noise** (keyboard, room, no speech at all) that the detector scored ≥ 0.3. Now a
+  candidate needs ≥ 0.2 s of speech (Silero VAD over the last 2 s) before anything else runs.
+- **9 were the user saying "Tammy"**, which English Whisper wrote as "Demi.", "Dummy.", "Can
+  we?", "Damn it!" and refused. The Bangla model wrote them as ডেমি, টেমি, তামি, ড্যামি, কেমি, so
+  the double-check now asks the Bangla model first, and accepts those spellings.
+- The shared detector scored most of the user's "Tammy"s low (0.02–0.5).
+
+`sohayok train-wake` retrains the detector with the user's own clips mixed into every batch
+(their "Tammy"s, augmented 40×, and the noises that fooled it), and calibrates its two
+thresholds on the hour of unseen Bangla speech (check: ≤ 10 detector hits per hour; instant:
+≤ 1 per hour). Three-fold cross-validation over the user's clips, each fold tested on clips
+it was not trained on (`bench/wake_user.py`):
+
+| Detector | User's "Tammy"s that wake (9) | … instantly | Noises that wake (31) |
+| --- | ---: | ---: | ---: |
+| Shared model (synthetic voices) | 4 | 1 | 0 |
+| **Personal model** | **9** | **5** | **0** |
+
+The final personal model (all 9 clips) uses check 0.9 and instant 0.995; on unseen Bangla
+speech it gives 9 detector hits per hour at the check threshold (each double-checked) and
+under 1 instant one. Nine clips is a small sample: recording more with `--record 10` and
+retraining is the next step.
 
 The three misses were Whisper hearing "Hey Tammy" as "Thank you." or "Page camming." and
 "ট্যামি" as "Can you?". Synthetic voices are cleaner than a real room, so expect somewhat lower

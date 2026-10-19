@@ -8,6 +8,7 @@ the last two seconds of audio can be double-checked by Whisper before the assist
 from __future__ import annotations
 
 import collections
+import json
 import logging
 import time
 from collections.abc import Callable
@@ -25,12 +26,28 @@ def resolve_wake_model(setting: str) -> tuple[str, str]:
     """(model name or .onnx path, the phrase to say). "tammy" is Sohayok's own model."""
     if setting in BUILT_IN:
         return setting, BUILT_IN[setting]
+    if setting == "tammy":  # trained on the user's own voice by `sohayok train-wake`
+        from sohayok.config import app_dir
+
+        personal = app_dir() / "models" / "tammy-personal.onnx"
+        if personal.is_file():
+            return str(personal), "Tammy"
     if setting.endswith(".onnx"):
         return setting, Path(setting).stem.replace("_", " ")
     bundled = resources.files("sohayok").joinpath(f"assets/{setting}.onnx")
     if bundled.is_file():
         return str(bundled), setting.replace("_", " ").title()
     raise FileNotFoundError(f"no wake word model named {setting!r}")
+
+
+def personal_thresholds(model: str) -> tuple[float, float] | None:
+    """(check, instant) thresholds calibrated when `sohayok train-wake` made this model."""
+    report = Path(model).with_suffix(".json")
+    try:
+        data = json.loads(report.read_text("utf-8"))
+        return float(data["threshold"]), float(data["instant_threshold"])
+    except (OSError, ValueError, KeyError):
+        return None
 
 
 class WakeWordListener:
@@ -51,14 +68,39 @@ class WakeWordListener:
         self.device = int(device) if isinstance(device, str) and device.isdigit() else device
         # Called with the audio that followed the wake word (float32, 16 kHz).
         self.on_wake: Callable[[np.ndarray], None] = lambda tail: None
-        # Second opinion on the last 2 s of audio (float32, 16 kHz); True accepts the wake.
-        self.confirm: Callable[[np.ndarray], bool] = lambda audio: True
+        # Second opinion on the last 2 s of audio (float32, 16 kHz), with the detector score
+        # and seconds of speech in it; True accepts the wake.
+        self.confirm: Callable[[np.ndarray, float, float], bool] = lambda audio, s, sp: True
         # While True (the assistant is busy or speaking), audio is ignored.
         self.paused: Callable[[], bool] = lambda: False
         self.gain = 1.0
         # At or above this score the wake is accepted immediately. On held-out audio, 97.7%
         # of "Tammy"s scored >= 0.8 and no frame of 1 h of Bangla speech did.
         self.instant_threshold = 0.8
+        # A wake needs this much real speech (Silero VAD) in the last 2 s. In real use the
+        # detector also fired on keyboard clicks and room noise (31 of 40 candidates, all with
+        # no speech); the user's real "Tammy"s had 0.4-0.9 s.
+        self.min_speech = 0.2
+        self._vad = None
+
+    def speech_in(self, audio: np.ndarray) -> float:
+        """Seconds of speech in float32 16 kHz audio (inf when the VAD is unavailable).
+
+        The whole window is checked at once: a streaming VAD lags the detector, which peaks
+        right at the end of the word.
+        """
+        if self._vad is None:
+            try:
+                from sohayok.audio import SpeechDetector
+
+                self._vad = SpeechDetector()
+            except Exception:
+                self._vad = False
+        if not self._vad:
+            return float("inf")
+        self._vad.reset()
+        blocks = range(0, len(audio) - 512 + 1, 512)
+        return sum(self._vad.probability(audio[i : i + 512]) >= 0.5 for i in blocks) * 512 / 16_000
 
     def score(self, frame: np.ndarray) -> float:
         """Wake-word probability for one 80 ms int16 frame."""
@@ -100,13 +142,17 @@ class WakeWordListener:
                 if score < self.threshold:
                     continue
                 audio = np.concatenate(recent).astype(np.float32) / 32768
+                speech = self.speech_in(audio)
+                if speech < self.min_speech:
+                    log.debug("wake candidate %.2f ignored: no speech", score)
+                    continue
                 self.model.reset()
                 cooldown = time.monotonic() + 1.5
                 if score >= self.instant_threshold:
                     accepted = True  # sure enough to wake at once, without waiting for Whisper
                 else:
                     try:
-                        accepted = self.confirm(audio)
+                        accepted = self.confirm(audio, score, speech)
                     except Exception:
                         log.exception("wake confirmation failed")
                         accepted = True

@@ -36,7 +36,11 @@ def test_clean_drops_whisper_hallucinations():
     assert clean("ক্রোম   খোলো") == "ক্রোম খোলো"
 
 
-def test_transcriber_routes_bangla_to_the_bangla_model():
+def test_transcriber_routes_bangla_to_the_bangla_model(monkeypatch):
+    import sohayok.stt as stt
+
+    monkeypatch.setattr(stt, "speech_seconds", lambda audio, **_: 1.0)
+
     class Multi:
         def detect(self, audio, allowed):
             return "bn", 0.9
@@ -50,10 +54,46 @@ def test_transcriber_routes_bangla_to_the_bangla_model():
 
     transcriber = Transcriber.__new__(Transcriber)
     transcriber.languages, transcriber.multi, transcriber.bangla = ["bn", "en"], Multi(), Bangla()
+    transcriber.detector = None
     heard = transcriber.transcribe(np.zeros(1600, dtype=np.float32))
     assert (heard.text, heard.language, heard.language_probability) == ("ভলিউম বাড়াও", "bn", 0.9)
     transcriber.bangla = None
     assert transcriber.transcribe(np.zeros(1600, dtype=np.float32)).text == "multi"
+
+    class Detector:  # the spoken-language classifier is asked first when it is loaded
+        def margin(self, audio, first, second):
+            return -10.0  # clearly English
+
+    transcriber.detector = Detector()
+    assert transcriber.transcribe(np.zeros(1600, dtype=np.float32)).language == "en"
+
+
+def test_bangla_or_english_combines_both_detectors():
+    from sohayok.stt import bangla_or_english
+
+    # the user's Bangla that Whisper called English (VoxLingua margin 17, Whisper p(en) 0.97)
+    assert bangla_or_english(17.0, 0.97)[0] == "bn"
+    # Indian-accented English that VoxLingua called Bangla (margin 6, Whisper p(en) 0.99)
+    assert bangla_or_english(6.0, 0.99)[0] == "en"
+    assert bangla_or_english(20.0, None) == ("bn", 1.0)
+    assert bangla_or_english(-12.0, None)[0] == "en"
+
+
+def test_silence_is_not_decoded(monkeypatch):
+    import sohayok.stt as stt
+
+    monkeypatch.setattr(stt, "speech_seconds", lambda audio, **_: 0.0)
+
+    class Fails:
+        def detect(self, audio, allowed):
+            raise AssertionError("silence must not reach a model")
+
+        transcribe = detect
+
+    transcriber = Transcriber.__new__(Transcriber)
+    transcriber.languages, transcriber.multi, transcriber.bangla = ["bn", "en"], Fails(), Fails()
+    transcriber.detector = Fails()
+    assert transcriber.transcribe(np.zeros(16_000, dtype=np.float32)).text == ""
 
 
 def test_transcript_normalization_keeps_bangla_words_whole():
@@ -174,3 +214,33 @@ def test_wake_name_handling():
     # what Whisper wrote for the user's real "Tammy" attempts
     assert all(heard_wake_name(t) for t in ("Demi.", "Demi", "Damn me?", "Atatemi"))
     assert not any(heard_wake_name(t) for t in ("you", "Thank you.", "Ahem!"))
+
+
+def test_wake_echo_is_dropped_from_one_breath_commands():
+    from sohayok.router import strip_wake_echo
+
+    assert strip_wake_echo("ডেমি ক্রোম খোলো") == "ক্রোম খোলো"
+    assert strip_wake_echo("Dummy, open Chrome") == "open Chrome"
+    assert strip_wake_echo("ডেমি") == "ডেমি"  # nothing else said: keep it
+    # the user's own way of talking is kept
+    assert strip_wake_echo("তুমি গানটা বন্ধ করো") == "তুমি গানটা বন্ধ করো"
+    assert strip_wake_echo("you open the Chrome browser") == "you open the Chrome browser"
+
+
+def test_whisper_loops_are_collapsed():
+    from sohayok.stt import clean
+
+    looped = (
+        "you can open the tab and close the table and close the table and close the table "
+        "and close the table"
+    )
+    assert clean(looped) == "you can open the tab and close the table"
+    assert clean("ভলিউম বাড়াও") == "ভলিউম বাড়াও"
+    assert clean("no no no") == "no"
+
+
+def test_user_wake_spellings_in_bangla():
+    from sohayok.desktop import heard_wake_name
+
+    assert all(heard_wake_name(t) for t in ("ডেমি", "টেমি", "তামি", "ড্যামি", "কেমি", "dummy"))
+    assert not any(heard_wake_name(t) for t in ("কী", "সার্চ", "লাইফস্টাইল", "Search."))

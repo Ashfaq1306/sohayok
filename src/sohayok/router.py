@@ -344,6 +344,42 @@ def strip_wake_name(text: str) -> str:
     return WAKE_PREFIX.sub("", text.strip(), count=1).strip()
 
 
+# How the user's "Tammy" can come out at the start of a command said in one breath
+# ("Tammy, open Chrome" -> "ডেমি ক্রোম খোলো"). "তুমি" / "you" are left alone: the user
+# starts many commands with them on purpose.
+WAKE_ECHOES = {
+    "টুমি",
+    "টামি",
+    "ট্যামি",
+    "তামি",
+    "টেমি",
+    "ডেমি",
+    "ড্যামি",
+    "ডামি",
+    "কেমি",
+    "tammy",
+    "tami",
+    "tommy",
+    "tummy",
+    "dummy",
+    "demi",
+}
+
+
+def strip_wake_echo(text: str) -> str:
+    """Drop a misheard wake word from the start of a command that followed the wake word."""
+    cleaned = strip_wake_name(text)
+    words = cleaned.split()
+    for size in (2, 1):
+        head = " ".join(words[:size]).strip(",.!?।").lower()
+        if len(words) > size and unicodedata.normalize("NFC", head) in WAKE_ECHO_SET:
+            return " ".join(words[size:]).lstrip(",.!?। ")
+    return cleaned
+
+
+WAKE_ECHO_SET = {unicodedata.normalize("NFC", w) for w in WAKE_ECHOES}
+
+
 def _compound(target: str) -> bool:
     """True for multi-step requests ("chrome and search cats"), which need the model."""
     return len(target.split()) > 4 or bool(

@@ -53,8 +53,29 @@ class Transcript:
     seconds: float
 
 
+def collapse_repeats(text: str) -> str:
+    """Whisper sometimes loops ("close the tab and close the tab and close the tab ...");
+    keep one copy of any phrase of up to 8 words repeated three or more times in a row."""
+    words = text.split()
+    for size in range(1, 9):
+        i, out = 0, []
+        while i < len(words):
+            chunk = words[i : i + size]
+            repeats = 1
+            while words[i + repeats * size : i + (repeats + 1) * size] == chunk:
+                repeats += 1
+            if len(chunk) == size and repeats >= 3:
+                out += chunk
+                i += repeats * size
+            else:
+                out.append(words[i])
+                i += 1
+        words = out
+    return " ".join(words)
+
+
 def clean(text: str) -> str:
-    text = re.sub(r"\s+", " ", text).strip()
+    text = collapse_repeats(re.sub(r"\s+", " ", text).strip())
     if text.lower().strip(" .!।") in {h.strip(" .!।") for h in HALLUCINATIONS}:
         return ""
     return text
@@ -85,6 +106,107 @@ def choose_language(probs: dict[str, float], allowed: list[str]) -> tuple[str, f
     total = sum(scores.values()) or 1.0
     best = max(scores, key=scores.get)
     return best, scores[best] / total
+
+
+LANGUAGE_ID_REPO = "speechbrain/lang-id-voxlingua107-ecapa"
+LANGUAGE_ID_REVISION = "0253049ae131d6a4be1c4f0d8b0ff483a0f8c8e9"
+
+
+class LanguageDetector:
+    """VoxLingua107 ECAPA spoken-language classifier (21M parameters, on the CPU).
+
+    Whisper's own language detection gave the user's Bangla 0% every time and sent half of
+    their real Bangla commands to the English model. This one got all ten right, and 99-100%
+    of FLEURS Bangla and English (even cut to 2.5 s), in 20-90 ms on the CPU.
+    """
+
+    def __init__(self, folder: Path | None = None) -> None:
+        import warnings
+
+        import torch
+
+        warnings.filterwarnings("ignore", module="speechbrain")
+        warnings.filterwarnings("ignore", message=".*list_audio_backends.*")
+        from speechbrain.inference.classifiers import EncoderClassifier
+        from speechbrain.utils.fetching import FetchConfig, LocalStrategy
+
+        if folder is None:
+            from sohayok.config import app_dir
+
+            folder = app_dir() / "models" / "lang-id-voxlingua107-ecapa"
+        self.torch = torch
+        self.model = EncoderClassifier.from_hparams(
+            source=LANGUAGE_ID_REPO,
+            savedir=str(folder),
+            run_opts={"device": "cpu"},
+            local_strategy=LocalStrategy.COPY,  # symlinks need admin rights on Windows
+            fetch_config=FetchConfig(revision=LANGUAGE_ID_REVISION),
+        )
+        self.model.hparams.label_encoder.ignore_len()
+        # labels look like "bn: Bengali"
+        self.index = {
+            label.split(":")[0]: i for i, label in self.model.hparams.label_encoder.ind2lab.items()
+        }
+
+    def scores(self, audio: np.ndarray):
+        """Log-probabilities of all 107 languages (from at most the first 6 s)."""
+        clip = self.torch.from_numpy(np.ascontiguousarray(audio[: 16_000 * 6], np.float32))
+        with self.torch.inference_mode():
+            return self.model.classify_batch(clip[None])[0][0]
+
+    def margin(self, audio: np.ndarray, first: str, second: str) -> float:
+        """How much more `first` than `second` (log-probability difference)."""
+        scores = self.scores(audio)
+        return float(scores[self.index[first]] - scores[self.index[second]])
+
+    def detect(self, audio: np.ndarray, allowed: list[str]) -> tuple[str, float]:
+        """Most likely language among `allowed`, with its probability among them."""
+        scores = self.scores(audio)
+        codes = [code for code in allowed if code in self.index]
+        if not codes:
+            return allowed[0], 0.0
+        values = self.torch.stack([scores[self.index[code]] for code in codes])
+        probs = self.torch.softmax(values, 0)
+        best = int(probs.argmax())
+        return codes[best], round(float(probs[best]), 3)
+
+
+# Bangla-vs-English rule fitted on five sets (the user's real Bangla commands, synthetic
+# Bangladeshi Bangla and Indian English commands, FLEURS Bangla and English cut to 3 s).
+# Each detector fails where the other does not: Whisper hears the user's Bangla as English,
+# VoxLingua hears Indian-accented English as Bangla (30%). Together: 97-100% on every set.
+BANGLA_BIAS = 5.5
+SURE_BANGLA = 14.7  # VoxLingua margins beyond these decide alone (Whisper cannot outvote them)
+SURE_ENGLISH = -3.7
+
+
+def bangla_or_english(margin: float, whisper_english: float | None) -> tuple[str, float]:
+    """Combine VoxLingua's bn-minus-en margin with Whisper's p(English)."""
+    if whisper_english is None:
+        score = margin - BANGLA_BIAS
+    else:
+        p = min(max(whisper_english, 1e-4), 1 - 1e-4)
+        score = margin - float(np.log(p / (1 - p))) - BANGLA_BIAS
+    probability = 1 / (1 + float(np.exp(-abs(score))))
+    return ("bn" if score > 0 else "en"), round(probability, 3)
+
+
+def speech_seconds(audio: np.ndarray, enough: float = float("inf")) -> float:
+    """Seconds of speech in the audio by Silero VAD, counting stops once `enough` is found
+    (inf if the VAD is unavailable)."""
+    try:
+        from sohayok.audio import BLOCK, SpeechDetector
+
+        vad = SpeechDetector()
+    except Exception:
+        return float("inf")
+    found = 0.0
+    for start in range(0, len(audio) - BLOCK + 1, BLOCK):
+        if vad.probability(audio[start : start + BLOCK]) >= 0.5:
+            found += BLOCK / 16_000
+            if found >= enough:
+                break
+    return found
 
 
 class _Multilingual:
@@ -132,6 +254,10 @@ class CT2Whisper:
             audio,
             language=language,
             beam_size=self.beam_size,
+            # One greedy pass. Whisper's default retries at higher temperatures when output
+            # looks repetitive; on silence the Bangla model then ran for up to 17 s.
+            temperature=0.0,
+            max_new_tokens=min(440, int(16 + 16 * len(audio) / 16_000)),
             vad_filter=False,
             condition_on_previous_text=False,
             without_timestamps=True,
@@ -188,6 +314,7 @@ class Transcriber:
         compute_type: str = "int8_float16",
         beam_size: int = 1,
         languages: list[str] | None = None,
+        language_detector: str = "voxlingua",
     ) -> None:
         from sohayok.models import resolve_bangla_model
 
@@ -198,6 +325,23 @@ class Transcriber:
             load_model(bangla_model, device, compute_type, beam_size) if bangla_model else None
         )
         self.names = {"multi": whisper_model, "bangla": bangla_model or whisper_model}
+        self.detector = None
+        if language_detector == "voxlingua":
+            try:
+                self.detector = LanguageDetector()
+            except Exception:
+                log.exception("language detector unavailable; using Whisper's")
+
+    def detect_language(self, audio: np.ndarray) -> tuple[str, float]:
+        if self.detector is None:
+            return self.multi.detect(audio, self.languages)
+        if sorted(self.languages) != ["bn", "en"]:
+            return self.detector.detect(audio, self.languages)
+        margin = self.detector.margin(audio, "bn", "en")  # ~40 ms on the CPU
+        if SURE_ENGLISH < margin < SURE_BANGLA:  # unsure: ask Whisper too (~190 ms)
+            _, _, probs = self.multi.model.detect_language(audio)
+            return bangla_or_english(margin, dict(probs).get("en", 0.0))
+        return bangla_or_english(margin, None)
 
     def transcribe(self, audio: np.ndarray, language: str | None = None) -> Transcript:
         from sohayok.audio import normalize_level
@@ -205,8 +349,11 @@ class Transcriber:
         started = time.monotonic()
         audio = normalize_level(audio.astype(np.float32))
         probability = 1.0
+        if speech_seconds(audio, enough=0.15) < 0.15:
+            # nothing was said: decoding silence only invents text (and takes long)
+            return Transcript("", language or self.languages[0], 0.0, time.monotonic() - started)
         if language is None:
-            language, probability = self.multi.detect(audio, self.languages)
+            language, probability = self.detect_language(audio)
         model = self.bangla if language == "bn" and self.bangla is not None else self.multi
         text = clean(model.transcribe(audio, language))
         return Transcript(text, language, probability, time.monotonic() - started)

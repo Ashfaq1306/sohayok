@@ -28,7 +28,9 @@ dependencies = [
     "send2trash>=2.1.0",
     "sounddevice>=0.5.6",
     "soundfile>=0.14.0",
+    "speechbrain>=1.1.2",
     "torch==2.8.0",
+    "torchaudio==2.8.0",
     "transformers>=5.20.1",
     "uiautomation>=2.0.29",
     "uvicorn>=0.54.0",
@@ -59,6 +61,7 @@ explicit = true
 
 [tool.uv.sources]
 torch = [{ index = "pytorch-cu128" }]
+torchaudio = [{ index = "pytorch-cu128" }]
 
 [tool.ruff]
 line-length = 100

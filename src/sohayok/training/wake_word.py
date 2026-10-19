@@ -244,13 +244,19 @@ def train(
     steps: int = 8000,
     seed: int = 20261018,
     max_false_per_hour: float = 10.0,
+    extra_pos: np.ndarray | None = None,
+    extra_neg: np.ndarray | None = None,
 ) -> dict:
+    """Train the detector. `extra_pos` / `extra_neg` are the user's own clips (embedded),
+    sampled into every batch so a handful of real recordings can steer the model."""
     import torch
     from torch import nn
 
     torch.manual_seed(seed)
     load = lambda name: torch.tensor(np.load(features / f"{name}.npy"))  # noqa: E731
     xp, xn, vp, vn = load("train_pos"), load("train_neg"), load("val_pos"), load("val_neg")
+    up = torch.tensor(extra_pos) if extra_pos is not None and len(extra_pos) else None
+    un = torch.tensor(extra_neg) if extra_neg is not None and len(extra_neg) else None
     model = nn.Sequential(
         nn.Flatten(),
         nn.Dropout(0.2),
@@ -269,9 +275,13 @@ def train(
     loss_fn = nn.BCELoss(reduction="none")
     best = {"score": -1.0}
     for step in range(1, steps + 1):
-        pi = torch.randint(0, len(xp), (128,))
-        ni = torch.randint(0, len(xn), (384,))
-        x = torch.cat([xp[pi], xn[ni]])
+        pos = [xp[torch.randint(0, len(xp), (128 if up is None else 64,))]]
+        if up is not None:
+            pos.append(up[torch.randint(0, len(up), (64,))])
+        neg = [xn[torch.randint(0, len(xn), (384 if un is None else 320,))]]
+        if un is not None:
+            neg.append(un[torch.randint(0, len(un), (64,))])
+        x = torch.cat(pos + neg)
         y = torch.cat([torch.ones(128), torch.zeros(384)])
         p = model(x).squeeze(1)
         # False wake-ups annoy more than a missed one, so negatives weigh more as training goes on.
@@ -310,6 +320,21 @@ def train(
             )
     model.load_state_dict(best.pop("state"))
     model.eval()
+    with torch.no_grad():
+        pn = model(vn).squeeze(1)
+    # Detector-only false wakes per hour of unseen speech: at the check threshold these go
+    # to the recognizers' double-check, at the instant threshold they would wake directly.
+    best["false_per_hour_by_threshold"] = {
+        str(t): round(float((pn >= t).sum()) / hours, 1) for t in (0.3, 0.5, 0.8)
+    }
+    # Lowest score that may wake without the double-check: at most one false wake per hour.
+    grid = (0.8, 0.85, 0.9, 0.93, 0.95, 0.97, 0.98, 0.99, 0.995)
+    best["instant_threshold"] = next(
+        (t for t in grid if float((pn >= t).sum()) / hours <= 1.0), 1.01
+    )
+    with torch.no_grad():
+        pp = model(vp).squeeze(1)
+    best["recall_instant"] = round(float((pp >= best["instant_threshold"]).float().mean()), 3)
     output.parent.mkdir(parents=True, exist_ok=True)
     torch.onnx.export(
         model,
@@ -321,6 +346,95 @@ def train(
         dynamo=False,
     )
     return best
+
+
+def speech_segment(audio: np.ndarray, pad: float = 0.15) -> np.ndarray:
+    """The part of a clip that contains speech (Silero VAD), with a little padding."""
+    from sohayok.audio import BLOCK, SpeechDetector
+
+    vad = SpeechDetector()
+    flags = [
+        vad.probability(audio[i : i + BLOCK]) >= 0.5
+        for i in range(0, len(audio) - BLOCK + 1, BLOCK)
+    ]
+    if not any(flags):
+        return audio
+    first = flags.index(True) * BLOCK
+    last = (len(flags) - flags[::-1].index(True)) * BLOCK
+    margin = int(pad * RATE)
+    return audio[max(0, first - margin) : min(len(audio), last + margin)]
+
+
+def embed_user_clips(
+    positives: list[np.ndarray], negatives: list[np.ndarray], copies: int = 40, seed: int = 20261019
+) -> tuple[np.ndarray, np.ndarray]:
+    """Many varied copies of the user's own "Tammy"s (and of noises that fooled the detector),
+    as detector features."""
+    from openwakeword.utils import AudioFeatures
+
+    rng = random.Random(seed)
+    pos = []
+    for clip in positives:
+        segment = speech_segment(clip)
+        pos.append(place(segment, rng, True))
+        for _ in range(copies):
+            pos.append(augment(place(change_speed(segment, rng), rng, True), rng))
+    neg = []
+    for clip in negatives:
+        neg.append(place(clip, rng, False))
+        for _ in range(max(1, copies // 4)):
+            neg.append(augment(place(clip, rng, False), rng))
+    features = AudioFeatures()
+
+    def embed(clips):
+        if not clips:
+            return np.zeros((0, 16, 96), np.float32)
+        pcm = (np.clip(np.stack(clips), -1, 1) * 32767).astype(np.int16)
+        return features.embed_clips(pcm, batch_size=64)[:, -16:, :].astype(np.float32)
+
+    return embed(pos), embed(neg)
+
+
+def label_kept_clips(folder: Path, bangla=None) -> tuple[list[np.ndarray], list[np.ndarray]]:
+    """Sort kept wake candidates into the user's "Tammy"s and noises.
+
+    A clip is a "Tammy" when a recognizer wrote the name (`bangla` re-transcribes clips saved
+    before the Bangla check existed), and a noise when it holds no speech at all. Clips with
+    other speech are left out: they may be either.
+    """
+    import soundfile as sf
+
+    from sohayok.desktop import heard_wake_name
+    from sohayok.stt import speech_seconds
+
+    positives, negatives = [], []
+    for wav in sorted(Path(folder).glob("*.wav")):
+        audio, _ = sf.read(wav, dtype="float32")
+        meta_path = wav.with_suffix(".json")
+        meta = json.loads(meta_path.read_text("utf-8")) if meta_path.exists() else {}
+        if "bangla" not in meta and bangla is not None:
+            meta["bangla"] = bangla.transcribe(audio, "bn")
+        heard = [meta.get(key, "") for key in ("bangla", "whisper")]
+        speech = speech_seconds(audio)
+        if any(heard_wake_name(text) for text in heard) and speech >= 0.15:
+            positives.append(audio)
+        elif speech < 0.1:
+            negatives.append(audio)
+    return positives, negatives
+
+
+def personalize(
+    base: Path,
+    positives: list[np.ndarray],
+    negatives: list[np.ndarray],
+    output: Path,
+    copies: int = 40,
+) -> dict:
+    """Retrain the detector with the user's own recordings added (a few minutes on the CPU)."""
+    extra_pos, extra_neg = embed_user_clips(positives, negatives, copies)
+    report = train(base, output, extra_pos=extra_pos, extra_neg=extra_neg)
+    report.update(user_positives=len(positives), user_negatives=len(negatives))
+    return report
 
 
 if __name__ == "__main__":
