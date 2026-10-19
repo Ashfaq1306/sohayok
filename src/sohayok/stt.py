@@ -125,6 +125,7 @@ class LanguageDetector:
 
         import torch
 
+        logging.getLogger("speechbrain").setLevel(logging.WARNING)
         warnings.filterwarnings("ignore", module="speechbrain")
         warnings.filterwarnings("ignore", message=".*list_audio_backends.*")
         from speechbrain.inference.classifiers import EncoderClassifier
